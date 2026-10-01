@@ -186,12 +186,14 @@ let history = [];
 let lastMsgWall = 0;   // 最后收到消息的本机时刻（判在线/离线用）
 let lastMsgTs   = 0;   // 最后一条消息的设备时间戳（判倒计时用）
 
-// ---- Topic 来源：URL 参数 > localStorage ----
+// ---- Topic 来源优先级：URL 参数 > localStorage > 内置默认设备 ----
+// 内置默认 topic 让页面「打开即显示数据」，无需手填；
+// 换设备时仍可用 ?topic=... 覆盖，或在输入框里改。
+const DEFAULT_TOPIC = 'airmon/voc01s_99b55c/data';
 const urlTopic = new URLSearchParams(location.search).get('topic');
 const savedTopic = localStorage.getItem('airmon_topic') || '';
-if (urlTopic || savedTopic) {
-  document.getElementById('topicInput').value = urlTopic || savedTopic;
-}
+const initialTopic = urlTopic || savedTopic || DEFAULT_TOPIC;
+document.getElementById('topicInput').value = initialTopic;
 
 function setStatus(text, cls) {
   const bar = document.getElementById('statusBar');
@@ -206,9 +208,13 @@ function tag(el, text, bad) {
 
 function historyKey() { return 'airmon_hist_' + topic; }
 
-// 取一条记录的时间戳（毫秒）：优先设备 ts，退回收包时刻
+// 取一条记录的时间戳（毫秒）用于图表 x 轴。
+// 关键：统一用「本机收包时刻 rxTs」作为 x 轴，不用设备 ts。
+// 原因：设备时钟与本机时钟存在偏差（设备未 NTP 成功时偏差可达数年），
+//       若 ts 与 rxTs 混用，同一张图上会出现横跨数年的异常点，曲线被压成一条线。
+// 设备 ts 只用于「倒计时推算」和「显示更新时刻」。
 function pointTime(r) {
-  return r.ts ? r.ts * 1000 : (r.rxTs || 0);
+  return r.rxTs || (r.ts ? r.ts * 1000 : 0);
 }
 
 // 按「8 小时时间窗 + 条数上限」双重裁剪，返回是否真的裁掉了内容
@@ -231,15 +237,54 @@ function pruneHistory() {
 }
 
 function loadHistory() {
-  try { history = JSON.parse(localStorage.getItem(historyKey())) || []; }
-  catch (e) { history = []; }
+  let raw = null;
+  try { raw = JSON.parse(localStorage.getItem(historyKey())); }
+  catch (e) { raw = null; }
+  // 健壮性：损坏数据 / 非数组 / 元素非对象一律视为空，避免后续 map 崩溃白屏
+  history = Array.isArray(raw)
+    ? raw.filter(x => x && typeof x === 'object' && !Array.isArray(x))
+    : [];
   // 加载时就裁一次：上次关页面后过了很久，旧点必须立刻丢掉并落盘，
   // 否则 localStorage 会一直留着过期数据（只裁内存、不写回是无效的）
   if (pruneHistory()) saveHistory();
 }
 
+// 换设备后，旧 topic 的历史 key 会永远留在 localStorage 里吃配额。
+// 只保留当前 topic 的 key，其余清理掉（用户换回旧设备时会重新累积，可接受）。
+function dropStaleHistories(keepKey) {
+  try {
+    Object.keys(localStorage)
+      .filter(k => k.startsWith('airmon_hist_') && k !== keepKey)
+      .forEach(k => localStorage.removeItem(k));
+  } catch (e) { /* localStorage 不可用时忽略 */ }
+}
+
 function saveHistory() {
-  try { localStorage.setItem(historyKey(), JSON.stringify(history)); } catch (e) {}
+  try {
+    localStorage.setItem(historyKey(), JSON.stringify(history));
+    return true;
+  } catch (e) {
+    // 配额写满（多为 historyKey 随 topic 变化残留了大量旧 key）。
+    // 策略：先丢弃最旧的一半再试一次；仍失败则清理其它 topic 的历史后重试。
+    // 不加处理的话，一旦写失败历史就不再落盘，用户会以为「一直没数据」。
+    try {
+      history = history.slice(-Math.floor(history.length / 2) || 10);
+      localStorage.setItem(historyKey(), JSON.stringify(history));
+      return true;
+    } catch (e2) {
+      try {
+        const keep = historyKey();
+        Object.keys(localStorage)
+          .filter(k => k.startsWith('airmon_hist_') && k !== keep)
+          .forEach(k => localStorage.removeItem(k));
+        localStorage.setItem(keep, JSON.stringify(history));
+        return true;
+      } catch (e3) {
+        setStatus('本地存储写入失败（浏览器配额已满），历史仅在本次会话保留', 'warn');
+        return false;
+      }
+    }
+  }
 }
 
 function appendHistory(r) {
@@ -252,29 +297,46 @@ function renderLatest(r) {
   document.getElementById('cards').style.display = '';
   document.getElementById('empty').style.display = 'none';
   const clean = r.status === 'clean';
-  document.getElementById('vVoc').textContent  = clean ? '0' : Math.round(r.voc);
-  document.getElementById('vHcho').textContent = clean ? '0' : Math.round(r.hcho);
-  document.getElementById('vCo2').textContent  = clean ? '0' : Math.round(r.co2);
-  document.getElementById('vTemp').textContent = Number(r.temp).toFixed(1);
-  document.getElementById('vHumi').textContent = Number(r.humi).toFixed(1);
 
+  // 数值防污染：非有限数一律显示 '--'，避免 NaN/undefined 渲染成 "NaN"
+  const num = (v, digits) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? (digits ? n.toFixed(digits) : Math.round(n)) : '--';
+  };
+
+  document.getElementById('vVoc').textContent  = clean ? '0' : num(r.voc);
+  document.getElementById('vHcho').textContent = clean ? '0' : num(r.hcho);
+  document.getElementById('vCo2').textContent  = clean ? '0' : num(r.co2);
+  document.getElementById('vTemp').textContent = num(r.temp, 1);
+  document.getElementById('vHumi').textContent = num(r.humi, 1);
+
+  // 状态条：区分「设备在线且数据正常」与「刚收到一条异常帧」，
+  // 避免单条异常帧把整块状态条染红造成误判
   if (r.status === 'fail') {
-    setStatus('MQTT 已连接 · 传感器读取失败（最近一条）', 'err');
+    setStatus('MQTT 已连接 · 本条读取失败（可能是模组失锁，稍后会自动恢复）', 'err');
   } else if (clean) {
     setStatus('MQTT 已连接 · 空气洁净（气体低于检出限）', '');
   } else {
     setStatus('MQTT 已连接 · 数据正常', '');
   }
 
-  tag(document.getElementById('tVoc'),  clean ? '低于检出限' : (r.voc >= 600 ? '偏高(>600)' : '正常'), !clean && r.voc >= 600);
-  tag(document.getElementById('tHcho'), clean ? '低于检出限' : (r.hcho >= 80 ? '参考超标(≥80)' : '参考正常'), !clean && r.hcho >= 80);
-  tag(document.getElementById('tCo2'),  clean ? '低于检出限' : (r.co2 >= 1000 ? '建议通风' : '正常'), !clean && r.co2 >= 1000);
+  const vocN  = Number(r.voc),  hchoN = Number(r.hcho), co2N = Number(r.co2);
+  const humiN = Number(r.humi);
+  tag(document.getElementById('tVoc'),  clean ? '低于检出限' : (vocN >= 600 ? '偏高(>600)' : '正常'), !clean && vocN >= 600);
+  tag(document.getElementById('tHcho'), clean ? '低于检出限' : (hchoN >= 80 ? '参考超标(≥80)' : '参考正常'), !clean && hchoN >= 80);
+  tag(document.getElementById('tCo2'),  clean ? '低于检出限' : (co2N >= 1000 ? '建议通风' : '正常'), !clean && co2N >= 1000);
   tag(document.getElementById('tTemp'), '—');
-  tag(document.getElementById('tHumi'), r.humi > 70 ? '偏湿' : '—');
+  tag(document.getElementById('tHumi'), humiN > 70 ? '偏湿' : '—');
 
-  const t = r.ts ? new Date(r.ts * 1000) : new Date();
+  // 「更新于」优先用本机收包时刻（一定可信），设备 ts 存在且与本机相差
+  // 小于 10 分钟时才采用，否则说明设备没校时成功，不能拿它显示时间。
+  const nowMs = Date.now();
+  const devMs = r.ts ? r.ts * 1000 : 0;
+  const useDev = devMs && Math.abs(nowMs - devMs) < 10 * 60 * 1000;
+  const t = new Date(useDev ? devMs : (r.rxTs || nowMs));
   document.getElementById('updated').textContent =
-    '更新于 ' + t.toLocaleString('zh-CN', { hour12: false });
+    '更新于 ' + t.toLocaleString('zh-CN', { hour12: false }) +
+    (useDev ? '' : '（设备未校时，按本机时钟显示）');
 }
 
 // ---- 实时状态条：在线/离线 + 下次上报倒计时 ----
@@ -305,12 +367,18 @@ function updateLiveBar() {
     ? (since < 2000 ? '设备在线 · 刚刚收到数据' : '设备在线')
     : '设备离线 · 已 ' + Math.round(since / 1000) + 's 无数据';
 
-  // 倒计时按「设备时间戳 + 15s」推算，避免本机与设备时钟偏差造成误差
-  if (lastMsgTs) {
+  // 倒计时按「设备时间戳 + 15s」推算，避免本机与设备时钟偏差造成误差。
+  // 仅当设备时钟与本机接近（<10min）时才敢用；否则设备没校时，
+  // 倒计时会算出几百万秒的荒谬值，此时直接不显示。
+  const devClockOk = lastMsgTs &&
+                     Math.abs(Date.now() - lastMsgTs * 1000) < 10 * 60 * 1000;
+  if (devClockOk) {
     const nextAt = lastMsgTs * 1000 + REPORT_PERIOD_MS;
     const left   = Math.round((nextAt - Date.now()) / 1000);
     document.getElementById('countdown').textContent =
       left > 0 ? left + 's' : '已逾 ' + (-left) + 's';
+  } else {
+    document.getElementById('countdown').textContent = '—';
   }
   document.getElementById('lastSeen').textContent = fmtClock(lastMsgWall);
 }
@@ -320,10 +388,25 @@ function renderChart() {
   document.querySelectorAll('#tabs button').forEach(b =>
     b.classList.toggle('active', b.dataset.key === activeKey));
 
-  const pts = history.map(r => ({ x: pointTime(r), y: r[ch.key] }));
+  const pts = history.map(r => ({ x: pointTime(r), y: Number(r[ch.key]) }))
+                     .filter(p => Number.isFinite(p.y) && p.x > 0);
 
-  if (chart) chart.destroy();
-  chart = new Chart(document.getElementById('chart'), {
+  const canvas = document.getElementById('chart');
+  const radius = pts.length > 240 ? 0 : 2;
+
+  // 已有图表实例时只换数据，不销毁重建。
+  // 销毁重建会丢掉缩放/动画状态，每 15s 重建一次还会造成明显闪烁与 GC 压力。
+  if (chart) {
+    chart.data.datasets[0].label = ch.name + ' (' + ch.unit + ')';
+    chart.data.datasets[0].data = pts;
+    chart.data.datasets[0].borderColor = ch.color;
+    chart.data.datasets[0].backgroundColor = ch.color + '22';
+    chart.data.datasets[0].pointRadius = radius;
+    chart.update('none');   // 'none' = 跳过动画，15s 刷新无需过渡
+    return;
+  }
+
+  chart = new Chart(canvas, {
     type: 'line',
     data: {
       datasets: [{
@@ -332,14 +415,13 @@ function renderChart() {
         borderColor: ch.color,
         backgroundColor: ch.color + '22',
         fill: true, tension: 0.25, borderWidth: 2,
-        // 15s 一点，8 小时近 2000 点：默认不画点，只在稀疏时显示，
-        // 避免密集点连成一片糊掉
-        pointRadius: pts.length > 240 ? 0 : 2,
+        pointRadius: radius,
         pointHoverRadius: 4,
       }],
     },
     options: {
       responsive: true, maintainAspectRatio: false,
+      animation: false,               // 15s 节拍下动画纯属浪费
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },
@@ -369,7 +451,15 @@ function renderChart() {
 function connect() {
   topic = document.getElementById('topicInput').value.trim();
   if (!topic) { setStatus('请先填入设备 Topic', 'warn'); return; }
+  // topic 作为 localStorage key 的一部分，含 +/#/\0 等字符会与 MQTT 通配符
+  // 语义冲突，也可能造成 key 异常；这里做一次白名单校验并明确提示。
+  if (!/^[\w\-\/.]+$/.test(topic)) {
+    setStatus('Topic 含非法字符（仅允许字母、数字、_ - / .）', 'err');
+    return;
+  }
   localStorage.setItem('airmon_topic', topic);
+  dropStaleHistories(historyKey());
+  history = [];          // 先清空，防止上一设备的点在下方 renderChart 里被画出来
   loadHistory();
 
   if (history.length > 0) {
@@ -410,17 +500,24 @@ function connect() {
     let r;
     try { r = JSON.parse(payload.toString()); }
     catch (e) { return; }
+    // 结构校验：必须是对象，且至少含一个数值型气体字段。
+    // 公共 broker 上任何人都能往该 topic 发消息，不加校验会被垃圾 payload
+    // 污染本地历史（localStorage 有配额，写满后所有历史都会丢）。
+    if (!r || typeof r !== 'object' || Array.isArray(r)) return;
+    const numKeys = ['voc', 'hcho', 'co2', 'temp', 'humi'];
+    if (!numKeys.some(k => Number.isFinite(Number(r[k])))) return;
+    if (typeof r.status !== 'string') r.status = 'valid';
+
     r.rxTs = Date.now();
     lastMsgWall = r.rxTs;
-    if (r.ts) lastMsgTs = r.ts;
+    if (Number.isFinite(Number(r.ts))) lastMsgTs = Number(r.ts);
 
-    const dropped = appendHistory(r);   // appendHistory 已内部裁剪并落盘
+    appendHistory(r);   // appendHistory 已内部裁剪并落盘
     document.getElementById('liveBar').style.display = '';
     renderLatest(r);
     updateLiveBar();
     document.getElementById('chartPanel').style.display = '';
     renderChart();
-    void dropped;
   });
 
   client.on('reconnect', () => setStatus('连接断开，正在重连…', 'warn'));
