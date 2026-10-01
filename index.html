@@ -6,6 +6,9 @@
 <title>空气质量监测（MQTT）</title>
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5/dist/mqtt.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- 时间轴（scale type:'time'）依赖日期适配器，Chart.js 4 不再内置 -->
+<script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1/dist/chartjs-adapter-luxon.umd.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -52,6 +55,20 @@
   #chartWrap { position: relative; height: 300px; }
   .note { font-size: 12px; color: #999; margin-top: 12px; line-height: 1.7; }
   #empty { text-align: center; color: #999; font-size: 14px; padding: 40px 0; display: none; }
+
+  /* ---- 实时状态条 ---- */
+  #liveBar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    font-size: 13px; color: #555; margin-bottom: 12px;
+    background: #fff; border-radius: 10px; padding: 9px 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #bbb; flex: none; }
+  .dot.on  { background: #2e7d32; box-shadow: 0 0 0 4px rgba(46,125,50,.15); }
+  .dot.off { background: #c62828; box-shadow: 0 0 0 4px rgba(198,40,40,.15); }
+  #liveBar .sep { color: #ddd; }
+  #liveBar .spacer { flex: 1; }
+  #lastSeen, #countdown { font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -68,6 +85,15 @@
 
 <div id="statusBar">未连接 —— 请先填入设备 Topic</div>
 
+<div id="liveBar" style="display:none">
+  <span class="dot" id="liveDot"></span>
+  <span id="liveText">等待数据…</span>
+  <span class="sep">|</span>
+  <span>下次上报 <span id="countdown">--</span></span>
+  <span class="spacer"></span>
+  <span>最后收到 <span id="lastSeen">--</span></span>
+</div>
+
 <div class="cards" id="cards" style="display:none">
   <div class="card primary"><div class="label">TVOC（实测）</div><div class="value" id="vVoc">--</div><div class="unit">µg/m³</div><div class="tag" id="tVoc"></div></div>
   <div class="card"><div class="label">甲醛（派生）</div><div class="value" id="vHcho">--</div><div class="unit">µg/m³</div><div class="tag" id="tHcho"></div></div>
@@ -82,13 +108,15 @@
   <div class="note">
     ※ 本模组仅 TVOC 为实测通道；甲醛 = TVOC/6、eCO₂ = 2×TVOC+350，系派生显示值，仅供趋势参考。
     判断甲醛是否超标请以 CMA 机构或检测盒为准（GB/T 18883-2022 限值 80 µg/m³）。<br>
-    ※ 设备每 15 分钟上报一次（24 秒窗口均值）。历史曲线由本浏览器累积记录，
-    页面关闭期间的数据不在曲线中；打开页面即可看到设备最新一条（保留消息）。<br>
+    ※ 设备每 <strong>15 秒</strong>上报一次（10 秒窗口均值，窗口有约 10 帧）。
+    历史曲线由本浏览器累积记录，<strong>仅保留最近 8 小时</strong>（约 1920 点），
+    更早的自动丢弃。页面关闭期间的数据不在曲线中；打开页面即可看到设备最新一条（保留消息）。<br>
+    ※ 超过 45 秒（3 个上报周期）没有新数据即视为设备离线 —— 可能是断电、掉网或 WiFi 重连中。<br>
     ※ 公共 broker 数据无隐私保障，请勿在 payload 中放入敏感信息。
   </div>
 </div>
 
-<div id="empty">已连接，等待设备下一条上报（每 15 分钟一条）…</div>
+<div id="empty">已连接，等待设备下一条上报（每 15 秒一条）…</div>
 
 <script>
 const BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
@@ -99,10 +127,18 @@ const CHANNELS = [
   { key: 'temp', name: '温度',  unit: '℃',     color: '#ba7517' },
   { key: 'humi', name: '湿度',  unit: '%RH',   color: '#534ab7' },
 ];
-const HISTORY_CAP = 2000;
+// ---- 数据保留策略 ----
+// 15s 一点 = 240 点/小时，8 小时 = 1920 点。同时设「8 小时时间窗」和「2000 条
+// 上限」两道闸：设备断线后即使时间推进，也不会长期留着过期的旧点。
+const RETENTION_MS = 8 * 60 * 60 * 1000;   // ★ 只保留最近 8 小时
+const HISTORY_CAP  = 2000;
+const REPORT_PERIOD_MS = 15000;            // 与固件 REPORT_PERIOD_MS 保持一致
+const OFFLINE_AFTER_MS = 45000;            // 超过 3 个周期没收到即判离线
 
 let client = null, chart = null, activeKey = 'voc', topic = '';
 let history = [];
+let lastMsgWall = 0;   // 最后收到消息的本机时刻（判在线/离线用）
+let lastMsgTs   = 0;   // 最后一条消息的设备时间戳（判倒计时用）
 
 // ---- Topic 来源：URL 参数 > localStorage ----
 const urlTopic = new URLSearchParams(location.search).get('topic');
@@ -124,15 +160,46 @@ function tag(el, text, bad) {
 
 function historyKey() { return 'airmon_hist_' + topic; }
 
+// 取一条记录的时间戳（毫秒）：优先设备 ts，退回收包时刻
+function pointTime(r) {
+  return r.ts ? r.ts * 1000 : (r.rxTs || 0);
+}
+
+// 按「8 小时时间窗 + 条数上限」双重裁剪，返回是否真的裁掉了内容
+function pruneHistory() {
+  const before = history.length;
+  const cutoff = Date.now() - RETENTION_MS;
+
+  // 数组按下标递增即时间递增，从头丢比 filter 更省
+  let drop = 0;
+  while (drop < history.length) {
+    const t = pointTime(history[drop]);
+    // 时间戳缺失的兜底保留（无法判断新旧时不贸然丢）
+    if (t && t < cutoff) drop++;
+    else break;
+  }
+  if (drop > 0) history = history.slice(drop);
+
+  if (history.length > HISTORY_CAP) history = history.slice(-HISTORY_CAP);
+  return drop > 0 || history.length !== before;
+}
+
 function loadHistory() {
   try { history = JSON.parse(localStorage.getItem(historyKey())) || []; }
   catch (e) { history = []; }
+  // 加载时就裁一次：上次关页面后过了很久，旧点必须立刻丢掉并落盘，
+  // 否则 localStorage 会一直留着过期数据（只裁内存、不写回是无效的）
+  if (pruneHistory()) saveHistory();
+}
+
+function saveHistory() {
+  try { localStorage.setItem(historyKey(), JSON.stringify(history)); } catch (e) {}
 }
 
 function appendHistory(r) {
   history.push(r);
-  if (history.length > HISTORY_CAP) history = history.slice(-HISTORY_CAP);
-  try { localStorage.setItem(historyKey(), JSON.stringify(history)); } catch (e) {}
+  pruneHistory();
+  saveHistory();
 }
 
 function renderLatest(r) {
@@ -164,36 +231,89 @@ function renderLatest(r) {
     '更新于 ' + t.toLocaleString('zh-CN', { hour12: false });
 }
 
+// ---- 实时状态条：在线/离线 + 下次上报倒计时 ----
+function fmtClock(ms) {
+  return new Date(ms).toLocaleTimeString('zh-CN', { hour12: false });
+}
+
+function updateLiveBar() {
+  const bar = document.getElementById('liveBar');
+  if (!bar || bar.style.display === 'none') return;
+
+  const dot  = document.getElementById('liveDot');
+  const text = document.getElementById('liveText');
+
+  if (!lastMsgWall) {
+    dot.className = 'dot';
+    text.textContent = '等待首条数据…';
+    document.getElementById('countdown').textContent = '--';
+    document.getElementById('lastSeen').textContent  = '--';
+    return;
+  }
+
+  const since = Date.now() - lastMsgWall;
+  const online = since <= OFFLINE_AFTER_MS;
+
+  dot.className = 'dot ' + (online ? 'on' : 'off');
+  text.textContent = online
+    ? (since < 2000 ? '设备在线 · 刚刚收到数据' : '设备在线')
+    : '设备离线 · 已 ' + Math.round(since / 1000) + 's 无数据';
+
+  // 倒计时按「设备时间戳 + 15s」推算，避免本机与设备时钟偏差造成误差
+  if (lastMsgTs) {
+    const nextAt = lastMsgTs * 1000 + REPORT_PERIOD_MS;
+    const left   = Math.round((nextAt - Date.now()) / 1000);
+    document.getElementById('countdown').textContent =
+      left > 0 ? left + 's' : '已逾 ' + (-left) + 's';
+  }
+  document.getElementById('lastSeen').textContent = fmtClock(lastMsgWall);
+}
+
 function renderChart() {
   const ch = CHANNELS.find(c => c.key === activeKey);
   document.querySelectorAll('#tabs button').forEach(b =>
     b.classList.toggle('active', b.dataset.key === activeKey));
 
-  const labels = history.map(r => {
-    const t = r.ts ? new Date(r.ts * 1000) : new Date(r.rxTs || 0);
-    return t.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
-  });
-  const values = history.map(r => r[ch.key]);
+  const pts = history.map(r => ({ x: pointTime(r), y: r[ch.key] }));
 
   if (chart) chart.destroy();
   chart = new Chart(document.getElementById('chart'), {
     type: 'line',
     data: {
-      labels,
       datasets: [{
         label: ch.name + ' (' + ch.unit + ')',
-        data: values,
+        data: pts,
         borderColor: ch.color,
         backgroundColor: ch.color + '22',
-        fill: true, tension: 0.3, pointRadius: 2, borderWidth: 2,
+        fill: true, tension: 0.25, borderWidth: 2,
+        // 15s 一点，8 小时近 2000 点：默认不画点，只在稀疏时显示，
+        // 避免密集点连成一片糊掉
+        pointRadius: pts.length > 240 ? 0 : 2,
+        pointHoverRadius: 4,
       }],
     },
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
-      plugins: { legend: { display: false } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (items) => items.length
+              ? new Date(items[0].parsed.x).toLocaleString('zh-CN', { hour12: false })
+              : '',
+          },
+        },
+      },
       scales: {
-        x: { ticks: { maxTicksLimit: 8, font: { size: 11 } }, grid: { display: false } },
+        // 时间轴：按真实时间戳定位，断线空档会如实留白，不会把两点挤在一起
+        x: {
+          type: 'time',
+          time: { unit: 'minute', tooltipFormat: 'HH:mm:ss',
+                  displayFormats: { minute: 'HH:mm', hour: 'HH:mm' } },
+          ticks: { maxTicksLimit: 8, font: { size: 11 } },
+          grid: { display: false },
+        },
         y: { beginAtZero: true, ticks: { font: { size: 11 } } },
       },
     },
@@ -207,7 +327,12 @@ function connect() {
   loadHistory();
 
   if (history.length > 0) {
-    renderLatest(history[history.length - 1]);
+    const last = history[history.length - 1];
+    lastMsgWall = last.rxTs || Date.now();
+    if (last.ts) lastMsgTs = last.ts;
+    renderLatest(last);
+    document.getElementById('liveBar').style.display = '';
+    updateLiveBar();
     document.getElementById('chartPanel').style.display = '';
     renderChart();
   }
@@ -239,11 +364,17 @@ function connect() {
     let r;
     try { r = JSON.parse(payload.toString()); }
     catch (e) { return; }
-    if (!r.ts) r.rxTs = Date.now();
-    appendHistory(r);
+    r.rxTs = Date.now();
+    lastMsgWall = r.rxTs;
+    if (r.ts) lastMsgTs = r.ts;
+
+    const dropped = appendHistory(r);   // appendHistory 已内部裁剪并落盘
+    document.getElementById('liveBar').style.display = '';
     renderLatest(r);
+    updateLiveBar();
     document.getElementById('chartPanel').style.display = '';
     renderChart();
+    void dropped;
   });
 
   client.on('reconnect', () => setStatus('连接断开，正在重连…', 'warn'));
@@ -260,6 +391,13 @@ CHANNELS.forEach(c => {
   b.onclick = () => { activeKey = c.key; renderChart(); };
   tabs.appendChild(b);
 });
+
+// 每 1s 刷新一次在线状态与倒计时；每 60s 顺带裁一次历史，
+// 保证「只留 8 小时」在设备断线、页面长期开着时也成立
+setInterval(() => { updateLiveBar(); }, 1000);
+setInterval(() => {
+  if (pruneHistory()) { saveHistory(); renderChart(); }
+}, 60000);
 
 document.getElementById('topicBtn').onclick = connect;
 document.getElementById('topicInput').addEventListener('keydown', e => {
