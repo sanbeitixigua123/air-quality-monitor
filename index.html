@@ -30,7 +30,6 @@ safe-buffer/index.js:
 @babel/runtime/helpers/regenerator.js:
   (*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE *)
 */
-
 </script>
 <script>
 /* ===== 内联依赖：chart.umd.min.js
@@ -56,7 +55,6 @@ var luxon=function(e){"use strict";function L(e,t){for(var n=0;n<t.length;n++){v
  * Released under the MIT license
  */
 !function(e,t){"object"==typeof exports&&"undefined"!=typeof module?t(require("chart.js"),require("luxon")):"function"==typeof define&&define.amd?define(["chart.js","luxon"],t):t((e="undefined"!=typeof globalThis?globalThis:e||self).Chart,e.luxon)}(this,(function(e,t){"use strict";const n={datetime:t.DateTime.DATETIME_MED_WITH_SECONDS,millisecond:"h:mm:ss.SSS a",second:t.DateTime.TIME_WITH_SECONDS,minute:t.DateTime.TIME_SIMPLE,hour:{hour:"numeric"},day:{day:"numeric",month:"short"},week:"DD",month:{month:"short",year:"numeric"},quarter:"'Q'q - yyyy",year:{year:"numeric"}};e._adapters._date.override({_id:"luxon",_create:function(e){return t.DateTime.fromMillis(e,this.options)},init(e){this.options.locale||(this.options.locale=e.locale)},formats:function(){return n},parse:function(e,n){const i=this.options,r=typeof e;return null===e||"undefined"===r?null:("number"===r?e=this._create(e):"string"===r?e="string"==typeof n?t.DateTime.fromFormat(e,n,i):t.DateTime.fromISO(e,i):e instanceof Date?e=t.DateTime.fromJSDate(e,i):"object"!==r||e instanceof t.DateTime||(e=t.DateTime.fromObject(e,i)),e.isValid?e.valueOf():null)},format:function(e,t){const n=this._create(e);return"string"==typeof t?n.toFormat(t):n.toLocaleString(t)},add:function(e,t,n){const i={};return i[n]=t,this._create(e).plus(i).valueOf()},diff:function(e,t,n){return this._create(e).diff(this._create(t)).as(n).valueOf()},startOf:function(e,t,n){if("isoWeek"===t){n=Math.trunc(Math.min(Math.max(0,n),6));const t=this._create(e);return t.minus({days:(t.weekday-n+7)%7}).startOf("day").valueOf()}return t?this._create(e).startOf(t).valueOf():e},endOf:function(e,t){return this._create(e).endOf(t).valueOf()}})}));
-
 </script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -118,13 +116,51 @@ var luxon=function(e){"use strict";function L(e,t){for(var n=0;n<t.length;n++){v
   #liveBar .sep { color: #ddd; }
   #liveBar .spacer { flex: 1; }
   #lastSeen, #countdown { font-variant-numeric: tabular-nums; }
+
+  /* ---- 操作按钮 / 历史分析 ---- */
+  header .head-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  button.ghost {
+    border: 1px solid #ddd; background: #fff; color: #555; border-radius: 8px;
+    padding: 6px 12px; font-size: 12px; cursor: pointer; white-space: nowrap;
+  }
+  button.ghost:hover { border-color: #bbb; color: #222; }
+  button.danger { border-color: #f0b9b9; color: #c62828; background: #fff; }
+  button.danger:hover { background: #ffebee; border-color: #e57373; }
+  .panel-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .panel-head h2 { font-size: 15px; font-weight: 600; }
+  .panel-head .meta { font-size: 12px; color: #888; }
+  .panel-head .spacer { flex: 1; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .stat { background: #fafafa; border: 1px solid #eee; border-radius: 8px; padding: 9px 11px; }
+  .stat .k { font-size: 11px; color: #888; margin-bottom: 4px; }
+  .stat .v { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .stat .s { font-size: 11px; color: #999; margin-top: 3px; }
+  .table-wrap { overflow: auto; max-height: 280px; border: 1px solid #eee; border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td {
+    padding: 6px 9px; border-bottom: 1px solid #f0f0f0; text-align: right;
+    white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: #888; font-weight: 500; background: #fafafa; position: sticky; top: 0; z-index: 1; }
+  tbody tr:last-child td { border-bottom: none; }
+  .table-empty { text-align: center; color: #999; padding: 18px 0; font-size: 12px; }
+  @media (max-width: 600px) {
+    header { align-items: flex-start; }
+    header .head-right { width: 100%; justify-content: space-between; }
+    .stat .v { font-size: 16px; }
+  }
 </style>
 </head>
 <body>
 
 <header>
   <h1>空气质量监测</h1>
-  <span id="updated">--</span>
+  <div class="head-right">
+    <span id="updated">--</span>
+    <button id="clearHistoryBtn" class="ghost danger" type="button"
+            title="清除本浏览器保存的当前设备历史曲线（不影响设备与 MQTT 保留消息）">清空历史</button>
+  </div>
 </header>
 
 <div id="topicBar">
@@ -157,11 +193,38 @@ var luxon=function(e){"use strict";function L(e,t){for(var n=0;n<t.length;n++){v
   <div class="note">
     ※ 本模组仅 TVOC 为实测通道；甲醛 = TVOC/6、eCO₂ = 2×TVOC+350，系派生显示值，仅供趋势参考。
     判断甲醛是否超标请以 CMA 机构或检测盒为准（GB/T 18883-2022 限值 80 µg/m³）。<br>
-    ※ 设备每 <strong>15 秒</strong>上报一次（10 秒窗口均值，窗口有约 10 帧）。
-    历史曲线由本浏览器累积记录，<strong>仅保留最近 8 小时</strong>（约 1920 点），
-    更早的自动丢弃。页面关闭期间的数据不在曲线中；打开页面即可看到设备最新一条（保留消息）。<br>
+    ※ 设备每 <strong>15 秒</strong>上报一次（10 秒窗口均值）。
+    <strong>只有检测到有效帧才上报数值</strong>；占位帧/读取失败只发状态心跳、不写 0 值，
+    因此曲线不会周期性掉到 0。历史曲线由本浏览器累积记录，<strong>仅保留最近 8 小时</strong>（约 1920 点）。<br>
     ※ 超过 45 秒（3 个上报周期）没有新数据即视为设备离线 —— 可能是断电、掉网或 WiFi 重连中。<br>
     ※ 公共 broker 数据无隐私保障，请勿在 payload 中放入敏感信息。
+  </div>
+</div>
+
+<div class="panel" id="analysisPanel" style="display:none">
+  <div class="panel-head">
+    <h2>历史数据分析</h2>
+    <span class="meta" id="analysisMeta"></span>
+    <span class="spacer"></span>
+    <button id="exportCsvBtn" class="ghost" type="button">导出 CSV</button>
+  </div>
+  <div class="stats" id="analysisStats"></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>时段</th><th>样本</th><th>TVOC 均值</th><th>甲醛均值</th>
+          <th>eCO₂ 均值</th><th>温度均值</th><th>湿度均值</th>
+        </tr>
+      </thead>
+      <tbody id="hourlyBody"></tbody>
+    </table>
+  </div>
+  <div class="note">
+    ※ 统计只使用「有效上报」：status=valid 且气体读数 &gt; 0；
+    历史中残留的 0 值 / 占位帧记录会自动排除，不参与均值、极值与小时汇总。<br>
+    ※ 超阈值次数按 TVOC ≥ 600 µg/m³、甲醛 ≥ 80 µg/m³、eCO₂ ≥ 1000 ppm 统计；
+    P95 表示 95% 的样本不高于该值。
   </div>
 </div>
 
@@ -175,6 +238,15 @@ const CHANNELS = [
   { key: 'co2',  name: 'eCO₂', unit: 'ppm',    color: '#185fa5' },
   { key: 'temp', name: '温度',  unit: '℃',     color: '#ba7517' },
   { key: 'humi', name: '湿度',  unit: '%RH',   color: '#534ab7' },
+];
+
+// 历史分析使用的通道与参考阈值（只统计有效上报，0 值不参与）
+const ANALYSIS_CHANNELS = [
+  { key: 'voc',  name: 'TVOC', unit: 'µg/m³', digits: 0, threshold: 600 },
+  { key: 'hcho', name: '甲醛',  unit: 'µg/m³', digits: 0, threshold: 80 },
+  { key: 'co2',  name: 'eCO₂', unit: 'ppm',    digits: 0, threshold: 1000 },
+  { key: 'temp', name: '温度',  unit: '℃',     digits: 1 },
+  { key: 'humi', name: '湿度',  unit: '%RH',   digits: 1 },
 ];
 // ---- 数据保留策略 ----
 // 15s 一点 = 240 点/小时，8 小时 = 1920 点。同时设「8 小时时间窗」和「2000 条
@@ -220,6 +292,17 @@ function pointTime(r) {
   return r.rxTs || (r.ts ? r.ts * 1000 : 0);
 }
 
+// 有效读数判定：新固件只在检测到有效帧时才带数值上报；
+// 历史里可能残留旧固件的 status=clean/fail 或气体 0 值记录，一律排除。
+// 阈值与固件一致：VOC < 25（等价 eCO2 < 400）就是占位帧，不是有效测量。
+// 甲醛在低 VOC 时会被派生公式钳位到 0，所以不单独要求 hcho > 0。
+function isValidReading(r) {
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return false;
+  if (r.status === 'clean' || r.status === 'fail' || r.status === 'nodata') return false;
+  const voc = Number(r.voc), co2 = Number(r.co2);
+  return Number.isFinite(voc) && Number.isFinite(co2) && voc >= 25 && co2 >= 400;
+}
+
 // 按「8 小时时间窗 + 条数上限」双重裁剪，返回是否真的裁掉了内容
 function pruneHistory() {
   const before = history.length;
@@ -243,13 +326,14 @@ function loadHistory() {
   let raw = null;
   try { raw = JSON.parse(localStorage.getItem(historyKey())); }
   catch (e) { raw = null; }
-  // 健壮性：损坏数据 / 非数组 / 元素非对象一律视为空，避免后续 map 崩溃白屏
-  history = Array.isArray(raw)
-    ? raw.filter(x => x && typeof x === 'object' && !Array.isArray(x))
-    : [];
+  // 健壮性：损坏数据 / 非数组 / 元素非对象一律视为空，避免后续 map 崩溃白屏。
+  // 同时剔除旧固件留下的 0 值 / clean / fail 记录，避免它们污染曲线与统计。
+  const arr = Array.isArray(raw) ? raw.filter(x => x && typeof x === 'object' && !Array.isArray(x)) : [];
+  history = arr.filter(isValidReading);
   // 加载时就裁一次：上次关页面后过了很久，旧点必须立刻丢掉并落盘，
-  // 否则 localStorage 会一直留着过期数据（只裁内存、不写回是无效的）
-  if (pruneHistory()) saveHistory();
+  // 否则 localStorage 会一直留着过期数据（只裁内存、不写回是无效的）。
+  // 过滤掉无效记录后也要落盘，否则下次打开又会被读回来。
+  if (history.length !== arr.length || pruneHistory()) saveHistory();
 }
 
 // 换设备后，旧 topic 的历史 key 会永远留在 localStorage 里吃配额。
@@ -299,35 +383,26 @@ function appendHistory(r) {
 function renderLatest(r) {
   document.getElementById('cards').style.display = '';
   document.getElementById('empty').style.display = 'none';
-  const clean = r.status === 'clean';
-
   // 数值防污染：非有限数一律显示 '--'，避免 NaN/undefined 渲染成 "NaN"
   const num = (v, digits) => {
     const n = Number(v);
     return Number.isFinite(n) ? (digits ? n.toFixed(digits) : Math.round(n)) : '--';
   };
 
-  document.getElementById('vVoc').textContent  = clean ? '0' : num(r.voc);
-  document.getElementById('vHcho').textContent = clean ? '0' : num(r.hcho);
-  document.getElementById('vCo2').textContent  = clean ? '0' : num(r.co2);
+  document.getElementById('vVoc').textContent  = num(r.voc);
+  document.getElementById('vHcho').textContent = num(r.hcho);
+  document.getElementById('vCo2').textContent  = num(r.co2);
   document.getElementById('vTemp').textContent = num(r.temp, 1);
   document.getElementById('vHumi').textContent = num(r.humi, 1);
 
-  // 状态条：区分「设备在线且数据正常」与「刚收到一条异常帧」，
-  // 避免单条异常帧把整块状态条染红造成误判
-  if (r.status === 'fail') {
-    setStatus('MQTT 已连接 · 本条读取失败（可能是模组失锁，稍后会自动恢复）', 'err');
-  } else if (clean) {
-    setStatus('MQTT 已连接 · 空气洁净（气体低于检出限）', '');
-  } else {
-    setStatus('MQTT 已连接 · 数据正常', '');
-  }
+  // 只有有效读数才会走到这里（clean/fail/0 值在消息入口已过滤）
+  setStatus('MQTT 已连接 · 数据正常', '');
 
   const vocN  = Number(r.voc),  hchoN = Number(r.hcho), co2N = Number(r.co2);
   const humiN = Number(r.humi);
-  tag(document.getElementById('tVoc'),  clean ? '低于检出限' : (vocN >= 600 ? '偏高(>600)' : '正常'), !clean && vocN >= 600);
-  tag(document.getElementById('tHcho'), clean ? '低于检出限' : (hchoN >= 80 ? '参考超标(≥80)' : '参考正常'), !clean && hchoN >= 80);
-  tag(document.getElementById('tCo2'),  clean ? '低于检出限' : (co2N >= 1000 ? '建议通风' : '正常'), !clean && co2N >= 1000);
+  tag(document.getElementById('tVoc'),  vocN >= 600 ? '偏高(>600)' : '正常', vocN >= 600);
+  tag(document.getElementById('tHcho'), hchoN >= 80 ? '参考超标(≥80)' : '参考正常', hchoN >= 80);
+  tag(document.getElementById('tCo2'),  co2N >= 1000 ? '建议通风' : '正常', co2N >= 1000);
   tag(document.getElementById('tTemp'), '—');
   tag(document.getElementById('tHumi'), humiN > 70 ? '偏湿' : '—');
 
@@ -340,6 +415,17 @@ function renderLatest(r) {
   document.getElementById('updated').textContent =
     '更新于 ' + t.toLocaleString('zh-CN', { hour12: false }) +
     (useDev ? '' : '（设备未校时，按本机时钟显示）');
+}
+
+// 收到「无有效读数」的状态心跳：只更新在线状态，不碰卡片/历史/曲线。
+// 这样设备仍显示在线，但曲线不会被 0 值拉出抖动。
+function handleNoData(r) {
+  const msg = (r && r.status === 'fail')
+    ? '设备在线 · 本轮读取失败，已跳过（不写入曲线）'
+    : '设备在线 · 本轮未检测到有效数据，已跳过（不写入曲线）';
+  document.getElementById('liveBar').style.display = '';
+  setStatus(msg, 'warn');
+  updateLiveBar();
 }
 
 // ---- 实时状态条：在线/离线 + 下次上报倒计时 ----
@@ -391,8 +477,12 @@ function renderChart() {
   document.querySelectorAll('#tabs button').forEach(b =>
     b.classList.toggle('active', b.dataset.key === activeKey));
 
-  const pts = history.map(r => ({ x: pointTime(r), y: Number(r[ch.key]) }))
-                     .filter(p => Number.isFinite(p.y) && p.x > 0);
+  // 只画有效点：历史中残留的 0 值 / clean / fail 记录不进入曲线。
+  // 气体通道排除 0（0 = 未检测到数据）；温度/湿度允许 0 与负值。
+  const isGas = (ch.key === 'voc' || ch.key === 'hcho' || ch.key === 'co2');
+  const pts = history.filter(isValidReading)
+                     .map(r => ({ x: pointTime(r), y: Number(r[ch.key]) }))
+                     .filter(p => Number.isFinite(p.y) && p.x > 0 && (!isGas || p.y > 0));
 
   const canvas = document.getElementById('chart');
   const radius = pts.length > 240 ? 0 : 2;
@@ -451,6 +541,152 @@ function renderChart() {
   });
 }
 
+// ---- 历史数据分析（只统计有效上报，0 值不参与）----
+function pct95(sorted) {
+  if (!sorted.length) return NaN;
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * 0.95) - 1));
+  return sorted[idx];
+}
+
+function fmtNum(v, digits) {
+  return Number.isFinite(v) ? v.toFixed(digits) : '--';
+}
+
+function renderAnalysis() {
+  const panel = document.getElementById('analysisPanel');
+  const valid = history.filter(r => isValidReading(r) && pointTime(r) > 0);
+  if (!valid.length) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+  const t0 = pointTime(valid[0]);
+  const t1 = pointTime(valid[valid.length - 1]);
+  document.getElementById('analysisMeta').textContent =
+    `${valid.length} 个有效样本 · ${fmtClock(t0)} ~ ${fmtClock(t1)}`;
+
+  // 每个通道只取有效值：气体通道排除 0；温度/湿度允许 0 与负值
+  const statsHtml = ANALYSIS_CHANNELS.map(ch => {
+    const isGas = (ch.key === 'voc' || ch.key === 'hcho' || ch.key === 'co2');
+    const vals = valid.map(r => Number(r[ch.key]))
+                      .filter(v => Number.isFinite(v) && (!isGas || v > 0))
+                      .sort((a, b) => a - b);
+    if (!vals.length) {
+      return `<div class="stat"><div class="k">${ch.name}</div><div class="v">--</div><div class="s">无有效样本</div></div>`;
+    }
+    const sum = vals.reduce((a, b) => a + b, 0);
+    const avg = sum / vals.length;
+    const min = vals[0];
+    const max = vals[vals.length - 1];
+    const p95 = pct95(vals);
+    const over = ch.threshold ? vals.filter(v => v >= ch.threshold).length : null;
+    const sub = ch.threshold
+      ? `P95 ${fmtNum(p95, ch.digits)} · 超阈值 ${over} 次`
+      : `P95 ${fmtNum(p95, ch.digits)} · 范围 ${fmtNum(min, ch.digits)}~${fmtNum(max, ch.digits)}`;
+    return `<div class="stat">
+      <div class="k">${ch.name} 均值 / 最大 (${ch.unit})</div>
+      <div class="v">${fmtNum(avg, ch.digits)} / ${fmtNum(max, ch.digits)}</div>
+      <div class="s">${sub}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('analysisStats').innerHTML = statsHtml;
+
+  // 按小时汇总：以本机收包时间（rxTs）为准，避免设备未校时导致分桶错乱
+  const buckets = new Map();
+  valid.forEach(r => {
+    const t = pointTime(r);
+    if (!t) return;
+    const d = new Date(t);
+    d.setMinutes(0, 0, 0);
+    const key = d.getTime();
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(r);
+  });
+
+  const rows = [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([hour, rs]) => {
+    const avgOf = (key, digits) => {
+      const gas = (key === 'voc' || key === 'hcho' || key === 'co2');
+      const vs = rs.map(r => Number(r[key]))
+                   .filter(v => Number.isFinite(v) && (!gas || v > 0));
+      return vs.length ? (vs.reduce((a, b) => a + b, 0) / vs.length).toFixed(digits) : '--';
+    };
+    return `<tr>
+      <td>${fmtClock(hour)}</td>
+      <td>${rs.length}</td>
+      <td>${avgOf('voc', 0)}</td>
+      <td>${avgOf('hcho', 0)}</td>
+      <td>${avgOf('co2', 0)}</td>
+      <td>${avgOf('temp', 1)}</td>
+      <td>${avgOf('humi', 1)}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('hourlyBody').innerHTML = rows ||
+    '<tr><td colspan="7" class="table-empty">暂无有效历史数据</td></tr>';
+}
+
+// ---- 清空当前设备的历史 ----
+function clearHistory() {
+  const n = history.length;
+  if (!n) { setStatus('当前没有可清空的历史数据', 'warn'); return; }
+  if (!confirm(`确定清空当前设备的 ${n} 条历史数据？\n\n仅清除本浏览器保存的记录，不影响设备、MQTT 保留消息或其他设备的历史。`)) return;
+
+  history = [];
+  try { localStorage.removeItem(historyKey()); } catch (e) { /* 忽略 */ }
+  if (chart) {
+    chart.data.datasets[0].data = [];
+    chart.update('none');
+  }
+  document.getElementById('chartPanel').style.display = 'none';
+  document.getElementById('analysisPanel').style.display = 'none';
+  const empty = document.getElementById('empty');
+  empty.textContent = '历史已清空，等待设备下一条有效上报…';
+  empty.style.display = '';
+  setStatus('历史数据已清空（设备连接不受影响）', 'warn');
+}
+
+// ---- 导出有效历史为 CSV ----
+// RFC4180 转义 + 公式注入防护：文本以 = + - @ 开头时前置单引号；
+// 数字列先 Number() 归一化，避免带空白/换行的字符串破坏列结构。
+function csvText(v) {
+  let s = (v === null || v === undefined) ? '' : String(v);
+  if (/^[=+\-@]/.test(s)) s = "'" + s;
+  if (/[",\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+function csvNum(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? String(n) : '';
+}
+
+function exportCsv() {
+  const rows = history.filter(isValidReading);
+  if (!rows.length) { setStatus('没有可导出的有效历史数据', 'warn'); return; }
+  const header = ['时间', 'TVOC(µg/m³)', '甲醛(µg/m³)', 'eCO2(ppm)', '温度(℃)', '湿度(%RH)', 'status'];
+  const lines = [header.join(',')];
+  rows.forEach(r => {
+    const d = new Date(pointTime(r));
+    const t = Number.isFinite(d.getTime())
+      ? d.toLocaleString('zh-CN', { hour12: false }).replace(/,/g, '')
+      : '';
+    lines.push([
+      csvText(t), csvNum(r.voc), csvNum(r.hcho), csvNum(r.co2),
+      csvNum(r.temp), csvNum(r.humi), csvText(r.status || 'valid'),
+    ].join(','));
+  });
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const now = new Date();
+  const p2 = n => String(n).padStart(2, '0');
+  const stamp = `${now.getFullYear()}${p2(now.getMonth() + 1)}${p2(now.getDate())}-${p2(now.getHours())}${p2(now.getMinutes())}${p2(now.getSeconds())}`;
+  a.download = 'airmon_' + stamp + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
 function connect() {
   topic = document.getElementById('topicInput').value.trim();
   if (!topic) { setStatus('请先填入设备 Topic', 'warn'); return; }
@@ -465,6 +701,21 @@ function connect() {
   history = [];          // 先清空，防止上一设备的点在下方 renderChart 里被画出来
   loadHistory();
 
+  // 切 topic 时把上一台设备的实时状态一并复位，避免旧读数/旧倒计时残留
+  lastMsgWall = 0;
+  lastMsgTs = 0;
+  document.getElementById('liveBar').style.display = 'none';
+  document.getElementById('cards').style.display = 'none';
+  document.getElementById('updated').textContent = '--';
+  if (chart) { chart.data.datasets[0].data = []; chart.update('none'); }
+
+  // 切 topic 时先收起旧面板；只有确实加载到有效历史才重新显示
+  document.getElementById('chartPanel').style.display = 'none';
+  document.getElementById('analysisPanel').style.display = 'none';
+  const empty = document.getElementById('empty');
+  empty.textContent = '已连接，等待设备下一条上报（每 15 秒一条）…';
+  empty.style.display = 'none';
+
   if (history.length > 0) {
     const last = history[history.length - 1];
     lastMsgWall = last.rxTs || Date.now();
@@ -473,7 +724,9 @@ function connect() {
     document.getElementById('liveBar').style.display = '';
     updateLiveBar();
     document.getElementById('chartPanel').style.display = '';
+    document.getElementById('empty').style.display = 'none';
     renderChart();
+    renderAnalysis();
   }
 
   if (client) { client.end(true); client = null; }
@@ -490,37 +743,70 @@ function connect() {
     client.subscribe(topic, { qos: 0 }, (err) => {
       if (err) { setStatus('订阅失败：' + err.message, 'err'); return; }
       if (history.length === 0) {
-        setStatus('MQTT 已连接，等待设备数据…', 'warn');
-        document.getElementById('empty').style.display = '';
+        // 如果保留消息已经先把数值卡片点亮，就不要再盖一层“等待数据”
+        if (document.getElementById('cards').style.display === 'none') {
+          setStatus('MQTT 已连接，等待设备数据…', 'warn');
+          document.getElementById('empty').style.display = '';
+        }
       } else {
         renderLatest(history[history.length - 1]);
       }
     });
   });
 
-  client.on('message', (t, payload) => {
+  client.on('message', (t, payload, packet) => {
     if (t !== topic) return;
     let r;
     try { r = JSON.parse(payload.toString()); }
     catch (e) { return; }
-    // 结构校验：必须是对象，且至少含一个数值型气体字段。
-    // 公共 broker 上任何人都能往该 topic 发消息，不加校验会被垃圾 payload
-    // 污染本地历史（localStorage 有配额，写满后所有历史都会丢）。
+    // 结构校验：公共 broker 上任何人都能往该 topic 发消息，不加校验会被
+    // 垃圾 payload 污染本地历史（localStorage 有配额，写满后所有历史都会丢）。
     if (!r || typeof r !== 'object' || Array.isArray(r)) return;
     const numKeys = ['voc', 'hcho', 'co2', 'temp', 'humi'];
-    if (!numKeys.some(k => Number.isFinite(Number(r[k])))) return;
-    if (typeof r.status !== 'string') r.status = 'valid';
+    const hasNumber = numKeys.some(k => Number.isFinite(Number(r[k])));
+    // 新固件的无数据心跳：只有 status，没有任何数值字段
+    const statusOnly = !hasNumber && typeof r.status === 'string' &&
+                       ['nodata', 'fail', 'clean'].includes(r.status);
+    if (!hasNumber && !statusOnly) return;
+
+    // broker 的保留消息只用于首屏展示，不计入历史/在线状态：
+    // 否则每次刷新都会把同一条旧数据重复追加，且会误显示“在线 45 秒”。
+    const isRetained = !!(packet && packet.retain);
+    if (isRetained) {
+      if (isValidReading(r)) {
+        if (typeof r.status !== 'string') r.status = 'valid';
+        renderLatest(r);
+        if (history.length > 0) {
+          document.getElementById('chartPanel').style.display = '';
+          renderChart();
+          renderAnalysis();
+        }
+        setStatus('MQTT 已连接 · 显示最后一条保留数据，等待实时上报…', 'warn');
+      } else {
+        setStatus('MQTT 已连接 · 最后一条为无有效数据心跳，等待实时上报…', 'warn');
+      }
+      return;
+    }
 
     r.rxTs = Date.now();
     lastMsgWall = r.rxTs;
     if (Number.isFinite(Number(r.ts))) lastMsgTs = Number(r.ts);
+
+    // 旧固件的 clean/fail/0 值记录、以及新固件的无数据心跳，都不进入历史与曲线
+    if (!isValidReading(r)) {
+      handleNoData(r);
+      return;
+    }
+    if (typeof r.status !== 'string') r.status = 'valid';
 
     appendHistory(r);   // appendHistory 已内部裁剪并落盘
     document.getElementById('liveBar').style.display = '';
     renderLatest(r);
     updateLiveBar();
     document.getElementById('chartPanel').style.display = '';
+    document.getElementById('empty').style.display = 'none';
     renderChart();
+    renderAnalysis();
   });
 
   client.on('reconnect', () => setStatus('连接断开，正在重连…', 'warn'));
@@ -542,9 +828,11 @@ CHANNELS.forEach(c => {
 // 保证「只留 8 小时」在设备断线、页面长期开着时也成立
 setInterval(() => { updateLiveBar(); }, 1000);
 setInterval(() => {
-  if (pruneHistory()) { saveHistory(); renderChart(); }
+  if (pruneHistory()) { saveHistory(); renderChart(); renderAnalysis(); }
 }, 60000);
 
+document.getElementById('clearHistoryBtn').onclick = clearHistory;
+document.getElementById('exportCsvBtn').onclick = exportCsv;
 document.getElementById('topicBtn').onclick = connect;
 document.getElementById('topicInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') connect();
