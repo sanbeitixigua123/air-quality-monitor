@@ -412,9 +412,13 @@ function renderLatest(r) {
   const devMs = r.ts ? r.ts * 1000 : 0;
   const useDev = devMs && Math.abs(nowMs - devMs) < 10 * 60 * 1000;
   const t = new Date(useDev ? devMs : (r.rxTs || nowMs));
+  // 保留消息要显示「数据时间」，不能写成「更新于」——
+  // 设备离线时最后一条有效数据可能是几小时前的，标成更新会误导。
+  const label = r.retained ? '数据时间 ' : '更新于 ';
+  const note = r.retained ? '（设备最后一条有效数据）'
+                          : (useDev ? '' : '（设备未校时，按本机时钟显示）');
   document.getElementById('updated').textContent =
-    '更新于 ' + t.toLocaleString('zh-CN', { hour12: false }) +
-    (useDev ? '' : '（设备未校时，按本机时钟显示）');
+    label + t.toLocaleString('zh-CN', { hour12: false }) + note;
 }
 
 // 收到「无有效读数」的状态心跳：只更新在线状态，不碰卡片/历史/曲线。
@@ -775,6 +779,10 @@ function connect() {
     if (isRetained) {
       if (isValidReading(r)) {
         if (typeof r.status !== 'string') r.status = 'valid';
+        // 保留消息不写入历史，但必须把「数据时间」还原成它自己的时间戳。
+        // 若沿用打开页面的时刻，设备断线时会显示成「刚刚更新」，误导性很强。
+        r.rxTs = Number.isFinite(Number(r.ts)) ? Number(r.ts) * 1000 : Date.now();
+        r.retained = true;
         renderLatest(r);
         if (history.length > 0) {
           document.getElementById('chartPanel').style.display = '';
