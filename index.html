@@ -387,6 +387,7 @@ let liveTail = null;   // { ts: 本机收包毫秒, r: 该条 payload }
 let API_MODE = false;
 let API_ROWS = 0;
 let API_BASE = '';
+let API_BASE_PENDING_SAVE = false;   // ?api= 指定的地址，探测成功后才持久化
 let API_FORCED_LOCAL = false;   // ?api=off 时强制本地，便于对比与排错
 let series = null;              // { from, to, points:[{t(秒), voc...}], bucket }
 let stats  = null;              // { total, channels, groups, from, to, group }
@@ -416,8 +417,11 @@ document.getElementById('topicInput').value = initialTopic;
     if (/^(off|none|0|local)$/i.test(p.trim())) {
       API_FORCED_LOCAL = true;      // 只对本次会话生效，不覆盖用户记住的地址
     } else {
+      // 先只写入内存，探测成功后才落 localStorage（见 probeApi）。
+      // 若在这里就持久化，一条恶意链接 ?api=https://evil.com 会把地址
+      // 永久钉进 localStorage，之后每次打开页面都会向它发请求。
       API_BASE = p.trim().replace(/\/+$/, '');
-      try { localStorage.setItem('airmon_api', API_BASE); } catch (e) { /* 忽略 */ }
+      API_BASE_PENDING_SAVE = true;
     }
     return;
   }
@@ -450,11 +454,26 @@ function pointTime(r) {
 // 历史里可能残留旧固件的 status=clean/fail 或气体 0 值记录，一律排除。
 // 阈值与固件一致：VOC < 25（等价 eCO2 < 400）就是占位帧，不是有效测量。
 // 甲醛在低 VOC 时会被派生公式钳位到 0，所以不单独要求 hcho > 0。
+// ★ 上限与温湿度量程必须与后端 VALUE_RANGES 一致：公共 broker 上任何人
+//   都能发一条 voc=999999 的伪造 valid 帧，前端直连 MQTT 不经过后端过滤，
+//   没有上限校验就会污染卡片、历史、统计与 CSV 导出（实测复现过）。
+const VALUE_RANGES = {
+  voc:  [25, 20000],   // 下限即占位帧判据
+  hcho: [0, 5000],
+  co2:  [400, 20000],  // 下限即占位帧判据
+  temp: [-40, 85],
+  humi: [0, 100],
+};
 function isValidReading(r) {
   if (!r || typeof r !== 'object' || Array.isArray(r)) return false;
   if (r.status === 'clean' || r.status === 'fail' || r.status === 'nodata') return false;
-  const voc = Number(r.voc), co2 = Number(r.co2);
-  return Number.isFinite(voc) && Number.isFinite(co2) && voc >= 25 && co2 >= 400;
+  for (const k of ['voc', 'hcho', 'co2', 'temp', 'humi']) {
+    const v = Number(r[k]);
+    if (!Number.isFinite(v)) return false;      // 五通道必须都是合法数值
+    const [lo, hi] = VALUE_RANGES[k];
+    if (v < lo || v > hi) return false;
+  }
+  return true;
 }
 
 // 按「8 小时时间窗 + 条数上限」双重裁剪，返回是否真的裁掉了内容
@@ -698,6 +717,11 @@ async function probeApi() {
     if (!j || j.ok !== true) throw new Error('health not ok');
     API_MODE = true;
     API_ROWS = Number(j.rows) || 0;
+    // 探测通过才记住：恶意/写错的 ?api= 不会被钉进 localStorage
+    if (API_BASE_PENDING_SAVE) {
+      API_BASE_PENDING_SAVE = false;
+      try { localStorage.setItem('airmon_api', API_BASE); } catch (e) { /* 忽略 */ }
+    }
   } catch (e) {
     API_MODE = false;
     API_ROWS = 0;
