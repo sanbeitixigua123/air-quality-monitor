@@ -80,6 +80,9 @@ var luxon=function(e){"use strict";function L(e,t){for(var n=0;n<t.length;n++){v
   }
   #statusBar.warn { background: #fff8e1; color: #f57f17; border-color: #ffecb3; }
   #statusBar.err  { background: #ffebee; color: #c62828; border-color: #ffcdd2; }
+  /* 中性提示：API 可用、只是实时通道断开。既不是正常（绿）也不是故障（黄/红），
+     因为历史曲线和统计其实都还在正常工作。 */
+  #statusBar.info { background: #f2f4f7; color: #5b6472; border-color: #e3e6eb; }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 16px; }
   .card { background: #fff; border-radius: 12px; padding: 14px 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06); text-align: center; }
   .card .label { font-size: 12px; color: #888; margin-bottom: 6px; }
@@ -92,7 +95,7 @@ var luxon=function(e){"use strict";function L(e,t){for(var n=0;n<t.length;n++){v
   .card.primary .value { color: #fff; }
   .card.primary .tag { background: rgba(255,255,255,.18); color: #fff; }
   .card.primary .tag.bad { background: #c62828; color: #fff; }
-  .panel { background: #fff; border-radius: 12px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .panel { background: #fff; border-radius: 12px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 14px; }
   .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
   .tabs button {
     border: 1px solid #ddd; background: #fafafa; border-radius: 8px; padding: 5px 12px;
@@ -100,6 +103,8 @@ var luxon=function(e){"use strict";function L(e,t){for(var n=0;n<t.length;n++){v
   }
   .tabs button.active { background: #0f6e56; border-color: #0f6e56; color: #fff; }
   #chartWrap { position: relative; height: 300px; }
+  /* 触摸拖拽必须禁用浏览器默认手势，否则手机上拖图表会变成滚动页面 */
+  #chartWrap canvas { touch-action: none; }
   .note { font-size: 12px; color: #999; margin-top: 12px; line-height: 1.7; }
   #empty { text-align: center; color: #999; font-size: 14px; padding: 40px 0; display: none; }
 
@@ -126,6 +131,8 @@ var luxon=function(e){"use strict";function L(e,t){for(var n=0;n<t.length;n++){v
   button.ghost:hover { border-color: #bbb; color: #222; }
   button.danger { border-color: #f0b9b9; color: #c62828; background: #fff; }
   button.danger:hover { background: #ffebee; border-color: #e57373; }
+  /* 数据源指示：有后端时用主色描边，一眼看出当前是服务器数据还是本机缓存 */
+  #apiChip.on { border-color: #b7d9cc; color: #0f6e56; background: #f2f9f6; }
   .panel-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
   .panel-head h2 { font-size: 15px; font-weight: 600; }
   .panel-head .meta { font-size: 12px; color: #888; }
@@ -145,10 +152,46 @@ var luxon=function(e){"use strict";function L(e,t){for(var n=0;n<t.length;n++){v
   th { color: #888; font-weight: 500; background: #fafafa; position: sticky; top: 0; z-index: 1; }
   tbody tr:last-child td { border-bottom: none; }
   .table-empty { text-align: center; color: #999; padding: 18px 0; font-size: 12px; }
+
+  /* ---- 视图分段控件（日/周/月）---- */
+  .seg { display: inline-flex; background: #f1f3f5; border-radius: 9px; padding: 3px; gap: 2px; }
+  .seg button {
+    border: none; background: transparent; border-radius: 7px; padding: 5px 14px;
+    font-size: 13px; color: #555; cursor: pointer; font-family: inherit;
+  }
+  .seg button.active { background: #fff; color: #0f6e56; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+
+  /* ---- 缩放状态条 ---- */
+  .zoom-info { display: flex; align-items: center; gap: 8px; margin-top: 9px; font-size: 12px; color: #555; }
+  .zoom-info .spacer { flex: 1; }
+  .zoom-info .hint { color: #bbb; font-size: 11px; }
+  #zoomText { font-variant-numeric: tabular-nums; }
+  #zoomText .live { color: #0f6e56; }
+
+  /* ---- 统计概览卡 ---- */
+  .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .scard { border: 1px solid #eee; border-radius: 10px; padding: 11px 12px; background: #fcfcfc; }
+  .scard .hd { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: #888; margin-bottom: 2px; }
+  .scard .big { font-size: 25px; font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .scard .big .u { font-size: 11px; font-weight: 400; color: #aaa; margin-left: 5px; }
+  .scard .rows { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; margin-top: 8px; font-size: 11px; color: #888; }
+  .scard .rows b { color: #333; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .scard .rows .bad b { color: #c62828; }
+
+  /* ---- 表格里的迷你趋势条（相对本列最大值）---- */
+  .cv { font-variant-numeric: tabular-nums; }
+  .mini { height: 4px; width: 58px; border-radius: 2px; background: #eef0f2; margin: 3px 0 0 auto; overflow: hidden; }
+  .mini i { display: block; height: 100%; border-radius: 2px; background: #0f6e56; }
+  .mini i.bad { background: #c62828; }
+  td .cv.bad { color: #c62828; }
+
   @media (max-width: 600px) {
     header { align-items: flex-start; }
     header .head-right { width: 100%; justify-content: space-between; }
     .stat .v { font-size: 16px; }
+    #chartWrap { height: 260px; }
+    .zoom-info .hint { display: none; }   /* 手机上留白不够，手势提示改由 note 承担 */
+    .scard .big { font-size: 22px; }
   }
 </style>
 </head>
@@ -158,6 +201,7 @@ var luxon=function(e){"use strict";function L(e,t){for(var n=0;n<t.length;n++){v
   <h1>空气质量监测</h1>
   <div class="head-right">
     <span id="updated">--</span>
+    <button id="apiChip" class="ghost" type="button" title="点击重新探测数据源">本地缓存</button>
     <button id="clearHistoryBtn" class="ghost danger" type="button"
             title="清除本浏览器保存的当前设备历史曲线（不影响设备与 MQTT 保留消息）">清空历史</button>
   </div>
@@ -187,23 +231,74 @@ var luxon=function(e){"use strict";function L(e,t){for(var n=0;n<t.length;n++){v
   <div class="card"><div class="label">湿度</div><div class="value" id="vHumi">--</div><div class="unit">%RH</div><div class="tag" id="tHumi"></div></div>
 </div>
 
+<!-- ================= 趋势曲线 ================= -->
 <div class="panel" id="chartPanel" style="display:none">
+  <div class="panel-head">
+    <h2>趋势曲线</h2>
+    <div class="seg" id="viewSeg">
+      <button type="button" data-view="day">日</button>
+      <button type="button" data-view="week">周</button>
+      <button type="button" data-view="month">月</button>
+    </div>
+    <span class="spacer"></span>
+    <button id="resetZoomBtn" class="ghost" type="button" title="恢复全范围（也可双击图表）">重置缩放</button>
+  </div>
   <div class="tabs" id="tabs"></div>
   <div id="chartWrap"><canvas id="chart"></canvas></div>
+  <div class="zoom-info">
+    <span id="zoomText">全范围</span>
+    <span class="spacer"></span>
+    <span class="hint">滚轮 / 双指缩放 · 拖动平移 · 双击复位</span>
+  </div>
   <div class="note">
-    ※ 本模组仅 TVOC 为实测通道；甲醛 = TVOC/6、eCO₂ = 2×TVOC+350，系派生显示值，仅供趋势参考。
+    ※ 横轴固定为所选视图的时间窗：日 = 最近 24 小时（1 分钟均值）、周 = 最近 7 天（1 小时均值）、
+    月 = 最近 30 天（日均值）。<strong>曲线最末端始终跟着最新一条上报实时延伸</strong>，
+    <strong>滚轮以光标位置为中心缩放，拖拽可平移，双击恢复全范围</strong>，
+    状态条会显示当前可视时间段。<br>
+    ※ 本模组仅 TVOC 为实测通道；甲醛 = TVOC/6 − 2.4、eCO₂ = 2×TVOC + 350，系派生显示值，仅供趋势参考。
     判断甲醛是否超标请以 CMA 机构或检测盒为准（GB/T 18883-2022 限值 80 µg/m³）。<br>
     ※ 设备每 <strong>15 秒</strong>上报一次（10 秒窗口均值）。
     <strong>只有检测到有效帧才上报数值</strong>；占位帧/读取失败只发状态心跳、不写 0 值，
-    因此曲线不会周期性掉到 0。历史曲线由本浏览器累积记录，<strong>仅保留最近 8 小时</strong>（约 1920 点）。<br>
+    因此曲线不会周期性掉到 0。<br>
+    ※ 服务端不可用时自动回退到本机缓存：曲线由本浏览器累积的记录绘制，
+    <strong>仅保留最近 8 小时</strong>（约 1920 点），此时周/月视图只能看到这 8 小时的数据。
+    可用 <code>?api=https://你的服务地址</code> 指定后端。<br>
     ※ 超过 45 秒（3 个上报周期）没有新数据即视为设备离线 —— 可能是断电、掉网或 WiFi 重连中。<br>
     ※ 公共 broker 数据无隐私保障，请勿在 payload 中放入敏感信息。
   </div>
 </div>
 
+<!-- ================= 统计概览 ================= -->
+<div class="panel" id="statsPanel" style="display:none">
+  <div class="panel-head">
+    <h2>统计概览</h2>
+    <span class="meta" id="statsMeta"></span>
+    <span class="spacer"></span>
+    <button id="exportViewBtn" class="ghost" type="button" title="导出当前视图的聚合数据">导出本视图 CSV</button>
+  </div>
+  <div class="stat-cards" id="statCards"></div>
+  <div class="table-wrap" id="statsTableWrap">
+    <table>
+      <thead>
+        <tr>
+          <th>时段</th><th>样本</th><th>TVOC 均值</th><th>甲醛均值</th>
+          <th>eCO₂ 均值</th><th>温度</th><th>湿度</th>
+        </tr>
+      </thead>
+      <tbody id="statBody"></tbody>
+    </table>
+  </div>
+  <div class="note">
+    ※ 均值 / 最大 / P95 / 超标次数均按所选视图的时间范围统计；P95 表示 95% 的样本不高于该值。
+    超标阈值：TVOC ≥ 600 µg/m³、甲醛 ≥ 80 µg/m³、eCO₂ ≥ 1000 ppm（温湿度无阈值）。<br>
+    ※ 表格中的迷你条为该时段 TVOC 均值相对本表最大值的比例，超阈值时转为红色。
+  </div>
+</div>
+
+<!-- ================= 本机缓存分析（原有功能） ================= -->
 <div class="panel" id="analysisPanel" style="display:none">
   <div class="panel-head">
-    <h2>历史数据分析</h2>
+    <h2>本机缓存明细</h2>
     <span class="meta" id="analysisMeta"></span>
     <span class="spacer"></span>
     <button id="exportCsvBtn" class="ghost" type="button">导出 CSV</button>
@@ -221,6 +316,8 @@ var luxon=function(e){"use strict";function L(e,t){for(var n=0;n<t.length;n++){v
     </table>
   </div>
   <div class="note">
+    ※ 本节只统计<strong>本浏览器缓存</strong>的原始记录（最近 8 小时），用于核对逐条明细；
+    长时间跨度的统计以上方「统计概览」为准。<br>
     ※ 统计只使用「有效上报」：status=valid 且气体读数 &gt; 0；
     历史中残留的 0 值 / 占位帧记录会自动排除，不参与均值、极值与小时汇总。<br>
     ※ 超阈值次数按 TVOC ≥ 600 µg/m³、甲醛 ≥ 80 µg/m³、eCO₂ ≥ 1000 ppm 统计；
@@ -239,6 +336,8 @@ const CHANNELS = [
   { key: 'temp', name: '温度',  unit: '℃',     color: '#ba7517' },
   { key: 'humi', name: '湿度',  unit: '%RH',   color: '#534ab7' },
 ];
+const CH_KEYS = CHANNELS.map(c => c.key);
+const GAS_KEYS = ['voc', 'hcho', 'co2'];
 
 // 历史分析使用的通道与参考阈值（只统计有效上报，0 值不参与）
 const ANALYSIS_CHANNELS = [
@@ -248,7 +347,23 @@ const ANALYSIS_CHANNELS = [
   { key: 'temp', name: '温度',  unit: '℃',     digits: 1 },
   { key: 'humi', name: '湿度',  unit: '%RH',   digits: 1 },
 ];
-// ---- 数据保留策略 ----
+
+// ---- 视图定义 ----
+// 三档视图共用同一套渲染管线，只有「时间窗 / 分桶粒度 / 统计分组」不同。
+// spanMs 同时决定横轴范围与请求的时间区间，三者必须一致，否则曲线与统计表会对不上。
+// 日视图用 1m 而不是 5m：15s 一条的原始数据被 5 分钟平均后，10 分钟才出 2 个点，
+// 曲线看上去「一动不动」——这是「图表不实时」最主要的观感来源。
+// 1m 桶下 24h 共 1440 点，仍在服务端 MAX_POINTS(3000) 以内。
+const VIEWS = {
+  day:   { name: '日', spanMs: 24 * 3600e3, bucket: '1m', bucketSec: 60,    group: 'hour',
+           unit: 'hour', tooltip: 'MM-dd HH:mm' },
+  week:  { name: '周', spanMs: 7 * 24 * 3600e3, bucket: '1h', bucketSec: 3600, group: 'day',
+           unit: 'day',  tooltip: 'MM-dd HH:mm' },
+  month: { name: '月', spanMs: 30 * 24 * 3600e3, bucket: '1d', bucketSec: 86400, group: 'day',
+           unit: 'day',  tooltip: 'yyyy-MM-dd' },
+};
+
+// ---- 数据保留策略（仅针对本机缓存）----
 // 15s 一点 = 240 点/小时，8 小时 = 1920 点。同时设「8 小时时间窗」和「2000 条
 // 上限」两道闸：设备断线后即使时间推进，也不会长期留着过期的旧点。
 const RETENTION_MS = 8 * 60 * 60 * 1000;   // ★ 只保留最近 8 小时
@@ -261,14 +376,53 @@ let history = [];
 let lastMsgWall = 0;   // 最后收到消息的本机时刻（判在线/离线用）
 let lastMsgTs   = 0;   // 最后一条消息的设备时间戳（判倒计时用）
 
+// 实时尾点：服务端桶时间是「桶起点」，最后一个聚合点最多比当前时刻早一个桶宽。
+// 保存最近一条有效读数，渲染时把曲线末端顶到真实收包时刻，让 15s 的新数据
+// 立刻体现在曲线尾巴上。
+let liveTail = null;   // { ts: 本机收包毫秒, r: 该条 payload }
+
+// ---- 数据源状态 ----
+// API_MODE 决定曲线/统计走服务端还是本机缓存。启动时探测一次，失败就整体回退，
+// 保证「后端没部署好」时页面依然可用（网页同时部署在 GitHub Pages 和 EC2）。
+let API_MODE = false;
+let API_ROWS = 0;
+let API_BASE = '';
+let API_FORCED_LOCAL = false;   // ?api=off 时强制本地，便于对比与排错
+let series = null;              // { from, to, points:[{t(秒), voc...}], bucket }
+let stats  = null;              // { total, channels, groups, from, to, group }
+let reqSeq = 0;                 // 请求序号：切视图/换设备时丢弃过期响应
+
+// ---- 视图与缩放状态 ----
+let viewKey = 'day';
+let xView = null;               // 当前可视窗口 {min,max}（毫秒），null = 全范围
+let followEnd = true;           // 窗口右端是否跟随最新数据（用户拖走后不再自动跟随）
+
 // ---- Topic 来源优先级：URL 参数 > localStorage > 内置默认设备 ----
 // 内置默认 topic 让页面「打开即显示数据」，无需手填；
 // 换设备时仍可用 ?topic=... 覆盖，或在输入框里改。
 const DEFAULT_TOPIC = 'airmon/voc01s_99b55c/data';
-const urlTopic = new URLSearchParams(location.search).get('topic');
+const urlParams = new URLSearchParams(location.search);
+const urlTopic = urlParams.get('topic');
 const savedTopic = localStorage.getItem('airmon_topic') || '';
 const initialTopic = urlTopic || savedTopic || DEFAULT_TOPIC;
 document.getElementById('topicInput').value = initialTopic;
+
+// ---- API 基址优先级：URL 参数 > localStorage 记忆 > 同源 ----
+// 同源（空字符串）意味着 API 与页面部署在同一域名下（EC2 + Nginx 反代的情形）；
+// GitHub Pages 上同源没有 /api/，探测会失败并自动回退，属于预期行为。
+(function resolveApiBase() {
+  const p = urlParams.get('api');
+  if (p !== null) {
+    if (/^(off|none|0|local)$/i.test(p.trim())) {
+      API_FORCED_LOCAL = true;      // 只对本次会话生效，不覆盖用户记住的地址
+    } else {
+      API_BASE = p.trim().replace(/\/+$/, '');
+      try { localStorage.setItem('airmon_api', API_BASE); } catch (e) { /* 忽略 */ }
+    }
+    return;
+  }
+  try { API_BASE = localStorage.getItem('airmon_api') || ''; } catch (e) { API_BASE = ''; }
+})();
 
 function setStatus(text, cls) {
   const bar = document.getElementById('statusBar');
@@ -332,8 +486,10 @@ function loadHistory() {
   history = arr.filter(isValidReading);
   // 加载时就裁一次：上次关页面后过了很久，旧点必须立刻丢掉并落盘，
   // 否则 localStorage 会一直留着过期数据（只裁内存、不写回是无效的）。
-  // 过滤掉无效记录后也要落盘，否则下次打开又会被读回来。
-  if (history.length !== arr.length || pruneHistory()) saveHistory();
+  // 注意先裁再比较：若把 pruneHistory() 放进 || 的右侧，左侧命中时它会被
+  // 短路跳过，本该淘汰的过期点要多留 60s 才被定时器清掉。
+  const pruned = pruneHistory();
+  if (history.length !== arr.length || pruned) saveHistory();
 }
 
 // 换设备后，旧 topic 的历史 key 会永远留在 localStorage 里吃配额。
@@ -414,19 +570,49 @@ function renderLatest(r) {
   const t = new Date(useDev ? devMs : (r.rxTs || nowMs));
   // 保留消息要显示「数据时间」，不能写成「更新于」——
   // 设备离线时最后一条有效数据可能是几小时前的，标成更新会误导。
-  const label = r.retained ? '数据时间 ' : '更新于 ';
-  const note = r.retained ? '（设备最后一条有效数据）'
-                          : (useDev ? '' : '（设备未校时，按本机时钟显示）');
+  // tsUnknown：保留消息里没有可信 ts，只能标注「时间未知」，
+  // 绝不能拿收到时刻冒充数据时间。
+  let label, note;
+  if (r.retained) {
+    label = r.tsUnknown ? '最后保留消息 · 收到时刻 ' : '数据时间 ';
+    note  = r.tsUnknown ? '（设备未校时，数据时间未知）' : '（设备最后一条有效数据）';
+  } else {
+    label = '更新于 ';
+    note  = useDev ? '' : '（设备未校时，按本机时钟显示）';
+  }
   document.getElementById('updated').textContent =
     label + t.toLocaleString('zh-CN', { hour12: false }) + note;
 }
 
 // 收到「无有效读数」的状态心跳：只更新在线状态，不碰卡片/历史/曲线。
-// 这样设备仍显示在线，但曲线不会被 0 值拉出抖动。
+// 注意：当前 MQTT 固件的 nodata/fail 心跳只含 status 和 ts，**不带温湿度**
+// （温湿度字段分支是对未来固件的向前兼容——若哪天心跳带上了温湿度，
+// 气体三格显示 '--'、温湿度照常刷新，用户就能区分「模组失锁」和「真离线」）。
 function handleNoData(r) {
-  const msg = (r && r.status === 'fail')
-    ? '设备在线 · 本轮读取失败，已跳过（不写入曲线）'
-    : '设备在线 · 本轮未检测到有效数据，已跳过（不写入曲线）';
+  // 固件在 nodata/fail 时仍会带上温湿度 —— 占位帧只影响气体三通道，
+  // 温湿度一直是正常的。把这两个值刷到卡片上，用户就能区分
+  // 「设备活着但模组失锁」和「设备彻底掉线」（后者连心跳都没有）。
+  const t = Number(r && r.temp), h = Number(r && r.humi);
+  const hasTH = Number.isFinite(t) && Number.isFinite(h) && h > 0;
+  if (hasTH) {
+    document.getElementById('cards').style.display = '';
+    document.getElementById('empty').style.display = 'none';
+    // 气体三格显示 '--' 而不是 0：0 会被误读成「测到了零浓度」
+    document.getElementById('vVoc').textContent  = '--';
+    document.getElementById('vHcho').textContent = '--';
+    document.getElementById('vCo2').textContent  = '--';
+    document.getElementById('vTemp').textContent = t.toFixed(1);
+    document.getElementById('vHumi').textContent = h.toFixed(1);
+    // 清掉上一轮残留的「正常 / 偏高」标签，否则会和新状态矛盾
+    ['tVoc', 'tHcho', 'tCo2'].forEach(id => tag(document.getElementById(id), '—'));
+    tag(document.getElementById('tTemp'), '—');
+    tag(document.getElementById('tHumi'), h > 70 ? '偏湿' : '—');
+  }
+
+  const base = (r && r.status === 'fail')
+    ? '设备在线 · 本轮读取失败'
+    : '设备在线 · 本轮未检测到有效数据';
+  const msg = base + (hasTH ? '（温湿度正常，气体通道失锁）' : '') + '，已跳过、不写入曲线';
   document.getElementById('liveBar').style.display = '';
   setStatus(msg, 'warn');
   updateLiveBar();
@@ -476,49 +662,365 @@ function updateLiveBar() {
   document.getElementById('lastSeen').textContent = fmtClock(lastMsgWall);
 }
 
-function renderChart() {
-  const ch = CHANNELS.find(c => c.key === activeKey);
-  document.querySelectorAll('#tabs button').forEach(b =>
-    b.classList.toggle('active', b.dataset.key === activeKey));
+/* ==================================================================
+   一、数据源探测与 API 访问
+   ================================================================== */
 
-  // 只画有效点：历史中残留的 0 值 / clean / fail 记录不进入曲线。
-  // 气体通道排除 0（0 = 未检测到数据）；温度/湿度允许 0 与负值。
-  const isGas = (ch.key === 'voc' || ch.key === 'hcho' || ch.key === 'co2');
-  const pts = history.filter(isValidReading)
-                     .map(r => ({ x: pointTime(r), y: Number(r[ch.key]) }))
-                     .filter(p => Number.isFinite(p.y) && p.x > 0 && (!isGas || p.y > 0));
+// 从 topic 反推设备名：airmon/<device>/data → <device>
+// 后端只认设备名，前端必须做这层转换，否则请求会被 400 拒绝。
+function deviceName() {
+  const parts = (topic || '').split('/').filter(Boolean);
+  if (parts.length >= 2 && parts[0] === 'airmon') return parts[1];
+  if (parts.length >= 2 && parts[parts.length - 1] === 'data') return parts[parts.length - 2];
+  return parts[0] || '';
+}
 
-  const canvas = document.getElementById('chart');
-  const radius = pts.length > 240 ? 0 : 2;
+// 带超时的 fetch：AbortController 是唯一能真正中断请求的手段，
+// 否则后端挂起时页面会一直转圈（移动网络下尤其明显）。
+async function fetchJson(url, timeoutMs) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
-  // 已有图表实例时只换数据，不销毁重建。
-  // 销毁重建会丢掉缩放/动画状态，每 15s 重建一次还会造成明显闪烁与 GC 压力。
-  if (chart) {
-    chart.data.datasets[0].label = ch.name + ' (' + ch.unit + ')';
-    chart.data.datasets[0].data = pts;
-    chart.data.datasets[0].borderColor = ch.color;
-    chart.data.datasets[0].backgroundColor = ch.color + '22';
-    chart.data.datasets[0].pointRadius = radius;
-    chart.update('none');   // 'none' = 跳过动画，15s 刷新无需过渡
+// 启动探测：3 秒内拿不到 {"ok":true} 就认定后端不可用。
+// 这里不重试 —— 页面主功能（MQTT 实时数据）不依赖后端，探测失败不该阻塞任何东西。
+async function probeApi() {
+  if (API_FORCED_LOCAL) { API_MODE = false; updateApiChip(); return; }
+  try {
+    const j = await fetchJson(API_BASE + '/api/health', 3000);
+    if (!j || j.ok !== true) throw new Error('health not ok');
+    API_MODE = true;
+    API_ROWS = Number(j.rows) || 0;
+  } catch (e) {
+    API_MODE = false;
+    API_ROWS = 0;
+  }
+  updateApiChip();
+}
+
+function updateApiChip() {
+  const el = document.getElementById('apiChip');
+  if (API_MODE) {
+    el.textContent = '服务器 · ' + API_ROWS.toLocaleString('en-US') + ' 条';
+    el.className = 'ghost on';
+    el.title = '数据源：' + (API_BASE || '同源') + '（点击重新探测）';
+  } else {
+    el.textContent = '本地缓存';
+    el.className = 'ghost';
+    el.title = '未连接统计服务，曲线与统计来自本机缓存（点击重新探测）';
+  }
+}
+
+function viewRangeSec() {
+  const to = Math.floor(Date.now() / 1000);
+  const from = to - Math.round(VIEWS[viewKey].spanMs / 1000);
+  return { from, to };
+}
+
+async function loadSeries() {
+  const v = VIEWS[viewKey];
+  const { from, to } = viewRangeSec();
+  const url = `${API_BASE}/api/series?device=${encodeURIComponent(deviceName())}`
+            + `&from=${from}&to=${to}&bucket=${v.bucket}`;
+  const j = await fetchJson(url, 8000);
+  series = {
+    from: from * 1000,
+    to: to * 1000,
+    points: Array.isArray(j.points) ? j.points : [],
+    bucket: j.bucket || v.bucket,
+  };
+}
+
+async function loadStats() {
+  const v = VIEWS[viewKey];
+  const { from, to } = viewRangeSec();
+  const url = `${API_BASE}/api/stats?device=${encodeURIComponent(deviceName())}`
+            + `&from=${from}&to=${to}&group=${v.group}`;
+  const j = await fetchJson(url, 8000);
+  stats = {
+    total: Number(j.total) || 0,
+    channels: j.channels || {},
+    groups: Array.isArray(j.groups) ? j.groups : [],
+    from: from * 1000,
+    to: to * 1000,
+    group: v.group,
+    source: 'api',
+  };
+}
+
+// 统一的数据刷新入口：API 模式拉服务端，本地模式即时计算。
+// 请求带序号，切视图/换设备后旧响应直接丢弃，避免慢请求把新视图覆盖掉。
+async function refreshData() {
+  const seq = ++reqSeq;
+  if (!API_MODE) {
+    series = null;
+    renderAll();          // renderAll 内部会重算本地统计
     return;
   }
+  try {
+    await Promise.all([loadSeries(), loadStats()]);
+    if (seq !== reqSeq) return;      // 已有更新的请求在跑，本次结果作废
+    renderAll();
+  } catch (e) {
+    if (seq !== reqSeq) return;
+    // 单次失败就回退，不做反复重试：页面必须马上可用，
+    // 用户点一下右上角数据源按钮即可重新探测。
+    API_MODE = false;
+    series = null;
+    updateApiChip();
+    renderAll();
+    setStatus('统计服务不可用，已切换为本机缓存模式（实时数据不受影响）', 'warn');
+  }
+}
 
+/* ==================================================================
+   二、本机聚合（API 不可用时的曲线与统计来源）
+   ================================================================== */
+
+// 把原始 15s 记录按 bucketMs 聚合成桶均值，口径与后端一致：桶内有效样本均值。
+// 空桶不生成，图表按真实时间轴绘制，断线空档自然留白。
+function aggregateLocal(fromMs, toMs, bucketMs) {
+  const map = new Map();
+  for (const r of history) {
+    if (!isValidReading(r)) continue;
+    const t = pointTime(r);
+    if (!t || t < fromMs || t > toMs) continue;
+    const b = Math.floor(t / bucketMs) * bucketMs;
+    let o = map.get(b);
+    if (!o) {
+      o = { t: b, n: 0, sum: {}, cnt: {} };
+      CH_KEYS.forEach(k => { o.sum[k] = 0; o.cnt[k] = 0; });
+      map.set(b, o);
+    }
+    o.n++;
+    CH_KEYS.forEach(k => {
+      const v = Number(r[k]);
+      if (!Number.isFinite(v)) return;
+      // 气体通道排除 0：0 表示未检测到数据，不是真实读数
+      if (GAS_KEYS.indexOf(k) >= 0 && v <= 0) return;
+      o.sum[k] += v; o.cnt[k]++;
+    });
+  }
+  return [...map.values()].sort((a, b) => a.t - b.t).map(o => {
+    const p = { t: o.t, n: o.n };
+    CH_KEYS.forEach(k => { p[k] = o.cnt[k] ? o.sum[k] / o.cnt[k] : null; });
+    return p;
+  });
+}
+
+function pct95(sorted) {
+  if (!sorted.length) return NaN;
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * 0.95) - 1));
+  return sorted[idx];
+}
+
+function fmtNum(v, digits) {
+  return Number.isFinite(v) ? v.toFixed(digits) : '--';
+}
+
+// 生成与 /api/stats 同构的对象，让统计面板在两种数据源下共用一套渲染代码。
+function buildLocalStats() {
+  const v = VIEWS[viewKey];
+  const to = Date.now();
+  const from = to - v.spanMs;
+  const valid = history.filter(r => {
+    const t = pointTime(r);
+    return isValidReading(r) && t >= from && t <= to;
+  });
+
+  const channels = {};
+  ANALYSIS_CHANNELS.forEach(ch => {
+    const isGas = GAS_KEYS.indexOf(ch.key) >= 0;
+    const vals = valid.map(r => Number(r[ch.key]))
+                      .filter(x => Number.isFinite(x) && (!isGas || x > 0))
+                      .sort((a, b) => a - b);
+    if (!vals.length) { channels[ch.key] = { n: 0 }; return; }
+    const sum = vals.reduce((a, b) => a + b, 0);
+    channels[ch.key] = {
+      avg: sum / vals.length,
+      min: vals[0],
+      max: vals[vals.length - 1],
+      p95: pct95(vals),
+      n: vals.length,
+      ...(ch.threshold ? { over: vals.filter(x => x >= ch.threshold).length } : {}),
+    };
+  });
+
+  // 分组：日视图按小时，周/月视图按天（与后端 group 参数语义一致）
+  const buckets = new Map();
+  valid.forEach(r => {
+    const t = pointTime(r);
+    const d = new Date(t);
+    if (v.group === 'hour') d.setMinutes(0, 0, 0);
+    else d.setHours(0, 0, 0, 0);
+    const key = d.getTime();
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(r);
+  });
+
+  const pad2 = n => String(n).padStart(2, '0');
+  const groups = [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([t, rs]) => {
+    const d = new Date(t);
+    const g = {
+      t: Math.floor(t / 1000),
+      label: v.group === 'hour' ? pad2(d.getHours()) + ':00'
+                                : pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()),
+      n: rs.length,
+    };
+    ANALYSIS_CHANNELS.forEach(ch => {
+      const isGas = GAS_KEYS.indexOf(ch.key) >= 0;
+      const vals = rs.map(r => Number(r[ch.key]))
+                     .filter(x => Number.isFinite(x) && (!isGas || x > 0));
+      g[ch.key] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+      if (ch.key === 'voc' && vals.length) {
+        const s = vals.slice().sort((a, b) => a - b);
+        g.voc_max = s[s.length - 1];
+        g.voc_p95 = pct95(s);
+      }
+    });
+    return g;
+  });
+
+  return { total: valid.length, channels, groups, from, to, group: v.group, source: 'local' };
+}
+
+/* ==================================================================
+   三、图表：渲染 + 缩放/平移（原生事件，不引入 chartjs-plugin-zoom）
+   ================================================================== */
+
+// 当前视图的完整时间范围（毫秒）
+function currentRange() {
+  if (API_MODE && series) {
+    // 右端至少覆盖到最近一条实时读数：loadSeries 的 to 按整秒截断，
+    // 可能比 liveTail.ts 早几百毫秒，不补齐实时尾点会被判在窗口外。
+    const to = (liveTail && liveTail.ts)
+      ? Math.max(series.to, liveTail.ts + 2000)
+      : series.to;
+    return { from: series.from, to };
+  }
+  const to = Date.now();
+  return { from: to - VIEWS[viewKey].spanMs, to };
+}
+
+// 把保存的窗口状态换算成本次要用的窗口，并做边界钳制。
+// followEnd 让「用户没动过右端」时自动跟随新数据，一旦拖走就固定住，
+// 否则每 15s 新数据进来都会把用户正在看的区间顶走。
+function resolveWindow(full) {
+  const fullSpan = full.to - full.from;
+  if (!xView) return { min: full.from, max: full.to };
+  let span = Math.min(Math.max(xView.max - xView.min, minSpan(full)), fullSpan);
+  let max = followEnd ? full.to : xView.max;
+  let min = max - span;
+  if (min < full.from) { min = full.from; max = min + span; }
+  if (max > full.to) { max = full.to; min = max - span; }
+  if (min < full.from) min = full.from;
+  return { min, max };
+}
+
+function minSpan(full) {
+  // 最小可视 1 分钟，同时保证最多放大到全范围的 1/400，避免缩成一个点后
+  // 横轴刻度全挤在一起（月视图 1/400 ≈ 1.8 小时，日视图 ≈ 3.6 分钟）。
+  return Math.max(60e3, (full.to - full.from) / 400);
+}
+
+function collectPoints(ch, isGas, full) {
+  let raw;
+  if (API_MODE && series) {
+    raw = series.points.map(p => ({ x: p.t * 1000, y: Number(p[ch.key]) }));
+  } else {
+    // 本地模式没有服务端分桶，按当前视图的桶宽在前端现算，口径保持一致
+    raw = aggregateLocal(full.from, full.to, VIEWS[viewKey].bucketSec * 1000)
+            .map(p => ({ x: p.t, y: Number(p[ch.key]) }));
+  }
+  // 把曲线末端顶到「现在」：聚合点的 x 是桶起点，直接画的话末端永远滞后
+  // 一个桶宽；用最近一条实时读数替换/追加末端点，曲线尾巴才跟得上 15s 上报。
+  if (liveTail && liveTail.ts > 0 &&
+      liveTail.ts >= full.from && liveTail.ts <= full.to) {
+    const yv = Number(liveTail.r[ch.key]);
+    const okY = Number.isFinite(yv) && (!isGas || yv > 0);
+    if (okY) {
+      const bMs = VIEWS[viewKey].bucketSec * 1000;
+      const curBucket = Math.floor(liveTail.ts / bMs) * bMs;
+      const last = raw[raw.length - 1];
+      if (last && Math.floor(last.x / bMs) * bMs === curBucket) {
+        last.x = Math.max(last.x, liveTail.ts);
+        last.y = yv;
+      } else if (!last || liveTail.ts > last.x) {
+        raw.push({ x: liveTail.ts, y: yv });
+      }
+    }
+  }
+
+  return raw.filter(p => Number.isFinite(p.y) && p.x > 0 && (!isGas || p.y > 0));
+}
+
+// 纵轴按「当前可视区间的数据」自适应：放大到某一段时曲线不会挤在底部一条缝里。
+// 这是缩放交互的关键配套，否则 x 轴放大了、y 轴还按全范围固定，等于没放大。
+// 上下界取整到「好看的刻度」（1/2/2.5/5 × 10^n），避免出现 802.1 / 50.8 这种刻度。
+function niceNum(x) {
+  if (!(x > 0)) return 1;
+  const exp = Math.floor(Math.log10(x));
+  const f = x / Math.pow(10, exp);
+  const nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10;
+  return nf * Math.pow(10, exp);
+}
+
+function autoY(win) {
+  const data = chart.data.datasets[0].data;
+  const ys = [];
+  for (const p of data) {
+    if (p.x < win.min || p.x > win.max) continue;
+    if (Number.isFinite(p.y)) ys.push(p.y);
+  }
+  const y = chart.options.scales.y;
+  if (!ys.length) { y.min = undefined; y.max = undefined; return; }
+
+  // 上限取 P99 而不是 max。
+  // 公共 broker 上任何人发一条伪造的极端值（实测被人发过 voc=999999）都会
+  // 进历史；若按 max 定纵轴，量程会被撑到六位数，正常曲线压成一条贴地的直线，
+  // 整张图直接失去意义。用 P99 后，单点离群最多在图顶被裁掉一小截，
+  // 不影响整体形状，也不需要在前端偷偷过滤数据。
+  ys.sort((a, b) => a - b);
+  const lo = ys[0];
+  const hiIdx = Math.min(ys.length - 1, Math.max(0, Math.ceil(ys.length * 0.99) - 1));
+  const hi = ys[hiIdx];
+
+  const isGas = GAS_KEYS.indexOf(activeKey) >= 0;
+  const pad = (hi - lo) * 0.08 || Math.max(1, Math.abs(hi) * 0.05);
+  const step = niceNum((hi - lo + pad * 2) / 4) || 1;
+  let min = Math.floor((lo - pad) / step) * step;
+  const max = Math.ceil((hi + pad) / step) * step;
+  if (isGas) min = Math.max(0, min);
+  y.min = min;
+  y.max = max > min ? max : min + step;
+}
+
+function createChart() {
+  const canvas = document.getElementById('chart');
   chart = new Chart(canvas, {
     type: 'line',
     data: {
       datasets: [{
-        label: ch.name + ' (' + ch.unit + ')',
-        data: pts,
-        borderColor: ch.color,
-        backgroundColor: ch.color + '22',
+        label: '', data: [],
+        borderColor: '#0f6e56', backgroundColor: '#0f6e5622',
         fill: true, tension: 0.25, borderWidth: 2,
-        pointRadius: radius,
-        pointHoverRadius: 4,
+        pointRadius: 0, pointHoverRadius: 4,
       }],
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      animation: false,               // 15s 节拍下动画纯属浪费
+      animation: false,               // 15s 节拍 + 缩放拖动下动画纯属浪费
+      // 关闭 autoPadding：Chart.js 默认会按刻度文字宽度自动加减绘图区内边距，
+      // 而缩放锚点是「像素 → 时间」换算出来的 —— 绘图区一变宽，光标下的时刻就漂。
+      // 实测连续滚轮会累积几像素偏移，关掉后右边界恒定，锚点才真正钉住。
+      layout: { autoPadding: false, padding: { right: 10, top: 4 } },
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },
@@ -534,29 +1036,405 @@ function renderChart() {
         // 时间轴：按真实时间戳定位，断线空档会如实留白，不会把两点挤在一起
         x: {
           type: 'time',
-          time: { unit: 'minute', tooltipFormat: 'HH:mm:ss',
-                  displayFormats: { minute: 'HH:mm', hour: 'HH:mm' } },
-          ticks: { maxTicksLimit: 8, font: { size: 11 } },
+          time: {
+            tooltipFormat: 'yyyy-MM-dd HH:mm',
+            displayFormats: { minute: 'HH:mm', hour: 'HH:mm', day: 'MM-dd' },
+          },
+          ticks: { maxTicksLimit: 7, font: { size: 11 } },
           grid: { display: false },
         },
-        y: { beginAtZero: true, ticks: { font: { size: 11 } } },
+        // beginAtZero 交给 autoY 决定：气体通道贴 0 起，温湿度从实际最小值起
+        y: {
+          beginAtZero: false,
+          ticks: { font: { size: 11 } },
+          grid: { color: '#f2f3f5' },
+          // 固定纵轴宽度：刻度位数变化（如 900 → 1204）会改变绘图区左边界，
+          // 而缩放锚点是按像素换算时间的 —— 左边界一动，光标下的时刻就会漂移，
+          // 连续滚轮时尤其明显。锁定宽度后绘图区尺寸恒定，锚点才真正稳。
+          afterFit(scale) { scale.width = 48; },
+        },
       },
     },
   });
+  bindChartInteractions(canvas);
 }
 
-// ---- 历史数据分析（只统计有效上报，0 值不参与）----
-function pct95(sorted) {
-  if (!sorted.length) return NaN;
-  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * 0.95) - 1));
-  return sorted[idx];
+// 横轴刻度粒度随可视跨度切换：大跨度按天、24 小时按小时、放大到两小时内按分钟。
+// 不切换的话，周视图会被 Chart.js 退化成逐小时刻度，出现一串重复的 "23:00"。
+function updateTimeUnit(win) {
+  const span = win.max - win.min;
+  chart.options.scales.x.time.unit =
+    span <= 2 * 3600e3 ? 'minute' : span <= 36 * 3600e3 ? 'hour' : 'day';
 }
 
-function fmtNum(v, digits) {
-  return Number.isFinite(v) ? v.toFixed(digits) : '--';
+function renderChart() {
+  const ch = CHANNELS.find(c => c.key === activeKey);
+  document.querySelectorAll('#tabs button').forEach(b =>
+    b.classList.toggle('active', b.dataset.key === activeKey));
+
+  if (!chart) createChart();
+
+  const isGas = GAS_KEYS.indexOf(activeKey) >= 0;
+  const full = currentRange();
+  const pts = collectPoints(ch, isGas, full);
+
+  // 已有图表实例时只换数据，不销毁重建。
+  // 销毁重建会丢掉缩放状态，每 15s 重建一次还会造成明显闪烁与 GC 压力。
+  const ds = chart.data.datasets[0];
+  ds.label = ch.name + ' (' + ch.unit + ')';
+  ds.data = pts;
+  ds.borderColor = ch.color;
+  ds.backgroundColor = ch.color + '22';
+  // 点太密时关闭圆点：288 个点全画圆点会让曲线糊成一条粗线
+  ds.pointRadius = pts.length > 240 ? 0 : 2;
+
+  const win = resolveWindow(full);
+  xView = win;
+  chart.options.scales.x.min = win.min;
+  chart.options.scales.x.max = win.max;
+  updateTimeUnit(win);
+  autoY(win);
+  chart.update('none');   // 'none' = 跳过动画，缩放/刷新都不需要过渡
+  updateZoomInfo(win, full);
+  updatePanels();
 }
 
-function renderAnalysis() {
+function updatePanels() {
+  const hasPts = chart && chart.data.datasets[0].data.length > 0;
+  document.getElementById('chartPanel').style.display =
+    (hasPts || API_MODE || history.length) ? '' : 'none';
+}
+
+// ---- 可视时间段文案 ----
+const pad2 = n => String(n).padStart(2, '0');
+function fmtHM(ms) {
+  const d = new Date(ms);
+  return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+}
+function fmtMDHM(ms) {
+  const d = new Date(ms);
+  return pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + fmtHM(ms);
+}
+function sameDay(a, b) {
+  const x = new Date(a), y = new Date(b);
+  return x.getFullYear() === y.getFullYear() &&
+         x.getMonth() === y.getMonth() && x.getDate() === y.getDate();
+}
+
+// 时间段文案：同一天只显示时分，跨天才补日期（24 小时视图必然跨天，两端都带日期）
+function fmtRangeText(a, b) {
+  return sameDay(a, b) ? fmtHM(a) + ' ~ ' + fmtHM(b)
+                       : fmtMDHM(a) + ' ~ ' + fmtMDHM(b);
+}
+
+function updateZoomInfo(win, full) {
+  const el = document.getElementById('zoomText');
+  const fullSpan = full.to - full.from;
+  const span = win.max - win.min;
+  const isFull = span >= fullSpan * 0.995;
+  const text = isFull
+    ? VIEWS[viewKey].name + '视图 · 全范围 ' + fmtRangeText(win.min, win.max)
+    : '显示 ' + fmtRangeText(win.min, win.max) + '（' + fmtSpan(span) + '）';
+  el.innerHTML = isFull ? text : '<span class="live">' + text + '</span>';
+}
+
+function fmtSpan(ms) {
+  const min = ms / 60000;
+  if (min < 60) return Math.round(min) + ' 分钟';
+  const h = min / 60;
+  if (h < 48) return (h < 10 ? h.toFixed(1) : Math.round(h)) + ' 小时';
+  return Math.round(h / 24) + ' 天';
+}
+
+// ---- 应用窗口（节流到一帧一次，拖动时 60fps 下也不会卡）----
+let rafPending = false;
+function scheduleApply() {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => {
+    rafPending = false;
+    if (!chart) return;
+    const full = currentRange();
+    const win = resolveWindow(full);
+    xView = win;
+    chart.options.scales.x.min = win.min;
+    chart.options.scales.x.max = win.max;
+    updateTimeUnit(win);
+    autoY(win);
+    chart.update('none');
+    updateZoomInfo(win, full);
+  });
+}
+
+function clampWin(min, max, full) {
+  const fullSpan = full.to - full.from;
+  let span = Math.min(Math.max(max - min, minSpan(full)), fullSpan);
+  if (min < full.from) min = full.from;
+  if (min + span > full.to) min = full.to - span;
+  if (min < full.from) min = full.from;
+  return { min, max: min + span };
+}
+
+// ---- 滚轮缩放：以光标所在时间点为锚 ----
+// 用 getValueForPixel 把像素换算成时间，比手算比例更准（会扣掉 y 轴宽度）。
+function onWheel(e) {
+  if (!chart) return;
+  const area = chart.chartArea;
+  if (!area) return;
+  const rect = chart.canvas.getBoundingClientRect();
+  const px = e.clientX - rect.left;
+  if (px < area.left || px > area.right) return;   // 指针在 y 轴左侧不处理
+
+  e.preventDefault();
+  const full = currentRange();
+  const cur = { min: chart.scales.x.min, max: chart.scales.x.max };
+  const span = cur.max - cur.min;
+  const anchor = chart.scales.x.getValueForPixel(px);
+  if (!Number.isFinite(anchor)) return;
+
+  // 指数缩放：deltaY 无论大小都得到平滑的等比变化，触控板不会一滚就飞
+  const factor = Math.exp(e.deltaY * 0.0018);
+  const newSpan = span * factor;
+  // 光标左侧/右侧的时间长度各自等比缩放，光标下的时刻保持不动
+  const ratio = (anchor - cur.min) / span;
+  const next = clampWin(anchor - ratio * newSpan, anchor + (1 - ratio) * newSpan, full);
+  xView = next;
+  followEnd = next.max >= full.to - (next.max - next.min) * 0.02;
+  scheduleApply();
+}
+
+// ---- 指针事件：单指/单键拖动平移，双指捏合缩放 ----
+const pointers = new Map();   // pointerId -> {x, y}
+let drag = null;              // { startX, span, min }
+let pinch = null;             // { dist0, mid0, anchor, span0 }
+
+function canvasX(e) {
+  return e.clientX - chart.canvas.getBoundingClientRect().left;
+}
+
+function beginDrag() {
+  const first = pointers.values().next().value;
+  if (!first) { drag = null; return; }
+  drag = {
+    startX: first.x,
+    min: chart.scales.x.min,
+    span: chart.scales.x.max - chart.scales.x.min,
+  };
+}
+
+function onPointerDown(e) {
+  if (!chart) return;
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  try { chart.canvas.setPointerCapture(e.pointerId); } catch (err) { /* 老浏览器忽略 */ }
+
+  if (pointers.size === 1) {
+    pinch = null;
+    beginDrag();
+  } else if (pointers.size === 2) {
+    // 双指按下：放弃拖动，改记捏合初态。
+    // 锚点取两指中点，缩放时手指中点不动，符合直觉。
+    drag = null;
+    const [a, b] = [...pointers.values()];
+    const midPx = (a.x + b.x) / 2 - chart.canvas.getBoundingClientRect().left;
+    pinch = {
+      dist0: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+      mid0: midPx,
+      anchor: chart.scales.x.getValueForPixel(midPx),
+      span0: chart.scales.x.max - chart.scales.x.min,
+    };
+  }
+}
+
+function onPointerMove(e) {
+  if (!chart || !pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const area = chart.chartArea;
+  if (!area) return;
+  const full = currentRange();
+
+  if (pointers.size >= 2 && pinch) {
+    e.preventDefault();
+    const [a, b] = [...pointers.values()];
+    const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    const midPx = (a.x + b.x) / 2 - chart.canvas.getBoundingClientRect().left;
+    const scale = pinch.dist0 / dist;                    // 手指张开 → 距离变大 → 窗口变小
+    const span = Math.min(Math.max(pinch.span0 * scale, minSpan(full)), full.to - full.from);
+    const ratio = Math.min(1, Math.max(0, (pinch.anchor - chart.scales.x.min) /
+                                          (chart.scales.x.max - chart.scales.x.min)));
+    // 手指整体平移时，窗口跟着平移（midPx - mid0）
+    const min = pinch.anchor - ratio * span - ((midPx - pinch.mid0) / area.width) * span;
+    const next = clampWin(min, min + span, full);
+    xView = next;
+    followEnd = next.max >= full.to - span * 0.02;
+    scheduleApply();
+    return;
+  }
+
+  if (drag) {
+    const dx = e.clientX - drag.startX;
+    if (Math.abs(dx) < 2) return;       // 轻微抖动不算拖动，保留 tooltip 手感
+    e.preventDefault();
+    const min = drag.min - (dx / area.width) * drag.span;
+    const next = clampWin(min, min + drag.span, full);
+    xView = next;
+    followEnd = next.max >= full.to - drag.span * 0.02;
+    scheduleApply();
+  }
+}
+
+function onPointerUp(e) {
+  if (!chart) return;
+  pointers.delete(e.pointerId);
+  try { chart.canvas.releasePointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
+  if (pointers.size === 1) {
+    pinch = null;
+    beginDrag();          // 松开一根手指后，剩下那根继续平移
+  } else if (pointers.size === 0) {
+    drag = null;
+    pinch = null;
+  }
+}
+
+function resetZoom() {
+  xView = null;
+  followEnd = true;
+  renderChart();
+}
+
+function bindChartInteractions(canvas) {
+  // passive:false 才能 preventDefault；不加的话手机上滚轮/拖动会被页面滚动抢走
+  canvas.addEventListener('wheel', onWheel, { passive: false });
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointermove', onPointerMove, { passive: false });
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointercancel', onPointerUp);
+  canvas.addEventListener('dblclick', resetZoom);
+}
+
+// HTML 转义：任何来自服务端 / 公共 broker 的字符串进 innerHTML 前必须过这里。
+// 单独提供是因为 csvText/esc 语义不同（CSV 转义 vs HTML 转义）。
+function escHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/* ==================================================================
+   四、统计面板渲染
+   ================================================================== */
+
+function renderStats() {
+  const panel = document.getElementById('statsPanel');
+  if (!stats || !stats.total) { panel.style.display = 'none'; return; }
+  panel.style.display = '';
+
+  const v = VIEWS[viewKey];
+  const meta = (stats.source === 'api' ? '服务端统计' : '本机缓存统计')
+             + ' · ' + stats.total.toLocaleString('en-US') + ' 个样本'
+             + ' · 最近 ' + v.name + '视图';
+  document.getElementById('statsMeta').textContent = meta;
+
+  // ---- 指标卡：三个气体通道 + 一个温湿度 ----
+  const cards = [];
+  ['voc', 'hcho', 'co2'].forEach(key => {
+    const ch = ANALYSIS_CHANNELS.find(c => c.key === key);
+    const s = (stats.channels || {})[key];
+    if (!s || !Number.isFinite(Number(s.avg))) {
+      cards.push(`<div class="scard">
+        <div class="hd"><span>${ch.name}</span><span>${ch.unit}</span></div>
+        <div class="big">--</div>
+        <div class="rows"><div>暂无有效样本</div></div>
+      </div>`);
+      return;
+    }
+    const over = Number(s.over) || 0;
+    const rate = s.n ? (over / s.n * 100) : 0;
+    cards.push(`<div class="scard">
+      <div class="hd"><span>${ch.name} 均值</span><span>${ch.unit}</span></div>
+      <div class="big">${fmtNum(Number(s.avg), ch.digits)}<span class="u">avg</span></div>
+      <div class="rows">
+        <div>最大 <b>${fmtNum(Number(s.max), ch.digits)}</b></div>
+        <div>P95 <b>${fmtNum(Number(s.p95), ch.digits)}</b></div>
+        <div class="${over ? 'bad' : ''}">超标 <b>${over.toLocaleString('en-US')}</b></div>
+        <div>占比 <b>${rate.toFixed(rate >= 10 ? 0 : 1)}%</b></div>
+      </div>
+    </div>`);
+  });
+
+  const t = (stats.channels || {}).temp, h = (stats.channels || {}).humi;
+  if (t && Number.isFinite(Number(t.avg))) {
+    cards.push(`<div class="scard">
+      <div class="hd"><span>温度 / 湿度</span><span>℃ / %RH</span></div>
+      <div class="big">${fmtNum(Number(t.avg), 1)}<span class="u">℃</span></div>
+      <div class="rows">
+        <div>湿度均值 <b>${h ? fmtNum(Number(h.avg), 1) : '--'}</b></div>
+        <div>温度范围 <b>${fmtNum(Number(t.min), 1)}~${fmtNum(Number(t.max), 1)}</b></div>
+        <div>湿度 P95 <b>${h ? fmtNum(Number(h.p95), 1) : '--'}</b></div>
+        <div>温度 P95 <b>${fmtNum(Number(t.p95), 1)}</b></div>
+      </div>
+    </div>`);
+  }
+  document.getElementById('statCards').innerHTML = cards.join('');
+
+  // ---- 分组表 ----
+  const groups = stats.groups || [];
+  const wrap = document.getElementById('statsTableWrap');
+  const keepScroll = wrap.scrollTop;      // 每 15s 刷新一次，别把用户滚动位置顶回去
+
+  if (!groups.length) {
+    document.getElementById('statBody').innerHTML =
+      '<tr><td colspan="7" class="table-empty">暂无分组数据</td></tr>';
+    return;
+  }
+
+  // 迷你条以本列最大值为基准；全为 0 时避免除零
+  const vocVals = groups.map(g => Number(g.voc)).filter(Number.isFinite);
+  const vocMax = vocVals.length ? Math.max(...vocVals) : 0;
+
+  // 后端约定返回 label，但缺字段时按 t 自行格式化兜底 —— 少一个字段就整列空白太难排查。
+  // label 来自 API（?api= 可指向任意服务器，公共页面存在被诱导配置恶意 API_BASE 的可能），
+  // 插入 innerHTML 前必须转义，否则是一个存储型 XSS 注入点。
+  const labelOf = (g) => {
+    if (g.label) return escHtml(g.label);
+    if (!Number.isFinite(Number(g.t))) return '';
+    const d = new Date(Number(g.t) * 1000);
+    return stats.group === 'hour'
+      ? pad2(d.getHours()) + ':00'
+      : pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  };
+
+  const cell = (val, digits, bad) => {
+    if (!Number.isFinite(Number(val))) return '<td>--</td>';
+    return `<td><span class="cv${bad ? ' bad' : ''}">${fmtNum(Number(val), digits)}</span></td>`;
+  };
+
+  document.getElementById('statBody').innerHTML = groups.map(g => {
+    const voc = Number(g.voc);
+    const w = vocMax > 0 && Number.isFinite(voc) ? Math.max(2, Math.min(100, voc / vocMax * 100)) : 0;
+    const bad = Number.isFinite(voc) && voc >= 600;
+    const vocCell = Number.isFinite(voc)
+      ? `<td><span class="cv${bad ? ' bad' : ''}">${fmtNum(voc, 0)}</span>
+           <div class="mini"><i class="${bad ? 'bad' : ''}" style="width:${w}%"></i></div></td>`
+      : '<td>--</td>';
+    return `<tr>
+      <td>${labelOf(g)}</td>
+      <td>${Number(g.n) || 0}</td>
+      ${vocCell}
+      ${cell(g.hcho, 0, Number(g.hcho) >= 80)}
+      ${cell(g.co2, 0, Number(g.co2) >= 1000)}
+      ${cell(g.temp, 1, false)}
+      ${cell(g.humi, 1, false)}
+    </tr>`;
+  }).join('');
+
+  wrap.scrollTop = keepScroll;
+}
+
+/* ==================================================================
+   五、本机缓存明细（原有「历史数据分析」功能，保留）
+   ================================================================== */
+function renderLocalAnalysis() {
   const panel = document.getElementById('analysisPanel');
   const valid = history.filter(r => isValidReading(r) && pointTime(r) > 0);
   if (!valid.length) {
@@ -571,7 +1449,7 @@ function renderAnalysis() {
 
   // 每个通道只取有效值：气体通道排除 0；温度/湿度允许 0 与负值
   const statsHtml = ANALYSIS_CHANNELS.map(ch => {
-    const isGas = (ch.key === 'voc' || ch.key === 'hcho' || ch.key === 'co2');
+    const isGas = GAS_KEYS.indexOf(ch.key) >= 0;
     const vals = valid.map(r => Number(r[ch.key]))
                       .filter(v => Number.isFinite(v) && (!isGas || v > 0))
                       .sort((a, b) => a - b);
@@ -609,7 +1487,7 @@ function renderAnalysis() {
 
   const rows = [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([hour, rs]) => {
     const avgOf = (key, digits) => {
-      const gas = (key === 'voc' || key === 'hcho' || key === 'co2');
+      const gas = GAS_KEYS.indexOf(key) >= 0;
       const vs = rs.map(r => Number(r[key]))
                    .filter(v => Number.isFinite(v) && (!gas || v > 0));
       return vs.length ? (vs.reduce((a, b) => a + b, 0) / vs.length).toFixed(digits) : '--';
@@ -629,19 +1507,53 @@ function renderAnalysis() {
     '<tr><td colspan="7" class="table-empty">暂无有效历史数据</td></tr>';
 }
 
-// ---- 清空当前设备的历史 ----
+function renderAll() {
+  // 本地模式下统计口径随原始数据变化，每次渲染现算（2000 点量级，开销可忽略）；
+  // 服务端模式沿用接口返回的统计，避免每 15s 重算一遍。
+  if (!API_MODE) stats = buildLocalStats();
+  renderChart();
+  renderStats();
+  renderLocalAnalysis();
+}
+
+/* ==================================================================
+   六、视图切换
+   ================================================================== */
+function updateViewSeg() {
+  document.querySelectorAll('#viewSeg button').forEach(b =>
+    b.classList.toggle('active', b.dataset.view === viewKey));
+}
+
+function switchView(k) {
+  if (!VIEWS[k] || k === viewKey) return;
+  viewKey = k;
+  xView = null;        // 换视图必须复位缩放：旧窗口的绝对时间对新时间轴没有意义
+  followEnd = true;
+  updateViewSeg();
+  refreshData();
+}
+
+/* ==================================================================
+   七、清空 / 导出
+   ================================================================== */
 function clearHistory() {
   const n = history.length;
   if (!n) { setStatus('当前没有可清空的历史数据', 'warn'); return; }
-  if (!confirm(`确定清空当前设备的 ${n} 条历史数据？\n\n仅清除本浏览器保存的记录，不影响设备、MQTT 保留消息或其他设备的历史。`)) return;
+  if (!confirm(`确定清空当前设备的 ${n} 条历史数据？\n\n仅清除本浏览器保存的记录，不影响设备、MQTT 保留消息或服务器端数据。`)) return;
 
   history = [];
   try { localStorage.removeItem(historyKey()); } catch (e) { /* 忽略 */ }
-  if (chart) {
-    chart.data.datasets[0].data = [];
-    chart.update('none');
+
+  if (API_MODE) {
+    // 服务端数据不受影响，曲线照常显示；只是本机明细没了
+    renderAll();
+    setStatus('本机缓存已清空（服务器端数据与设备连接不受影响）', 'warn');
+    return;
   }
+
+  if (chart) { chart.data.datasets[0].data = []; chart.update('none'); }
   document.getElementById('chartPanel').style.display = 'none';
+  document.getElementById('statsPanel').style.display = 'none';
   document.getElementById('analysisPanel').style.display = 'none';
   const empty = document.getElementById('empty');
   empty.textContent = '历史已清空，等待设备下一条有效上报…';
@@ -649,7 +1561,6 @@ function clearHistory() {
   setStatus('历史数据已清空（设备连接不受影响）', 'warn');
 }
 
-// ---- 导出有效历史为 CSV ----
 // RFC4180 转义 + 公式注入防护：文本以 = + - @ 开头时前置单引号；
 // 数字列先 Number() 归一化，避免带空白/换行的字符串破坏列结构。
 function csvText(v) {
@@ -663,6 +1574,21 @@ function csvNum(v) {
   return Number.isFinite(n) ? String(n) : '';
 }
 
+function downloadCsv(lines, tag) {
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const now = new Date();
+  const stamp = `${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}`
+              + `-${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}`;
+  a.download = 'airmon_' + tag + '_' + stamp + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// 导出本机原始记录（原有功能）
 function exportCsv() {
   const rows = history.filter(isValidReading);
   if (!rows.length) { setStatus('没有可导出的有效历史数据', 'warn'); return; }
@@ -678,19 +1604,42 @@ function exportCsv() {
       csvNum(r.temp), csvNum(r.humi), csvText(r.status || 'valid'),
     ].join(','));
   });
-  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  const now = new Date();
-  const p2 = n => String(n).padStart(2, '0');
-  const stamp = `${now.getFullYear()}${p2(now.getMonth() + 1)}${p2(now.getDate())}-${p2(now.getHours())}${p2(now.getMinutes())}${p2(now.getSeconds())}`;
-  a.download = 'airmon_' + stamp + '.csv';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  downloadCsv(lines, 'raw');
 }
 
+// 导出当前视图的聚合曲线（服务端模式下就是接口返回的桶均值）
+function exportViewCsv() {
+  const v = VIEWS[viewKey];
+  let pts;
+  if (API_MODE && series) {
+    pts = series.points.map(p => ({
+      t: p.t * 1000, voc: p.voc, hcho: p.hcho, co2: p.co2,
+      temp: p.temp, humi: p.humi, n: p.n,
+    }));
+  } else {
+    pts = aggregateLocal(Date.now() - v.spanMs, Date.now(), v.bucketSec * 1000);
+  }
+  if (!pts.length) { setStatus('当前视图没有可导出的数据', 'warn'); return; }
+
+  const header = ['时间', 'TVOC均值(µg/m³)', '甲醛均值(µg/m³)', 'eCO2均值(ppm)',
+                  '温度均值(℃)', '湿度均值(%RH)', '样本数'];
+  const lines = [header.join(',')];
+  pts.forEach(p => {
+    const d = new Date(p.t);
+    const t = Number.isFinite(d.getTime())
+      ? d.toLocaleString('zh-CN', { hour12: false }).replace(/,/g, '')
+      : '';
+    lines.push([
+      csvText(t), csvNum(p.voc), csvNum(p.hcho), csvNum(p.co2),
+      csvNum(p.temp), csvNum(p.humi), csvNum(p.n),
+    ].join(','));
+  });
+  downloadCsv(lines, v.bucket + '_' + viewKey);
+}
+
+/* ==================================================================
+   八、MQTT 连接
+   ================================================================== */
 function connect() {
   topic = document.getElementById('topicInput').value.trim();
   if (!topic) { setStatus('请先填入设备 Topic', 'warn'); return; }
@@ -708,13 +1657,21 @@ function connect() {
   // 切 topic 时把上一台设备的实时状态一并复位，避免旧读数/旧倒计时残留
   lastMsgWall = 0;
   lastMsgTs = 0;
+  liveTail = null;       // 上一台设备的实时尾点不能画到新设备的曲线上
   document.getElementById('liveBar').style.display = 'none';
   document.getElementById('cards').style.display = 'none';
   document.getElementById('updated').textContent = '--';
   if (chart) { chart.data.datasets[0].data = []; chart.update('none'); }
 
+  // 换设备后旧的曲线/统计全部作废，缩放也要复位
+  series = null;
+  stats = null;
+  xView = null;
+  followEnd = true;
+
   // 切 topic 时先收起旧面板；只有确实加载到有效历史才重新显示
   document.getElementById('chartPanel').style.display = 'none';
+  document.getElementById('statsPanel').style.display = 'none';
   document.getElementById('analysisPanel').style.display = 'none';
   const empty = document.getElementById('empty');
   empty.textContent = '已连接，等待设备下一条上报（每 15 秒一条）…';
@@ -729,9 +1686,12 @@ function connect() {
     updateLiveBar();
     document.getElementById('chartPanel').style.display = '';
     document.getElementById('empty').style.display = 'none';
-    renderChart();
-    renderAnalysis();
   }
+
+  // 先把本地数据画出来（API 探测是异步的，不能让首屏空着等 3 秒），
+  // 探测成功后再由 refreshData 覆盖成服务端聚合结果。
+  renderAll();
+  refreshData();
 
   if (client) { client.end(true); client = null; }
   setStatus('正在连接 ' + BROKER_URL + ' …', 'warn');
@@ -781,14 +1741,19 @@ function connect() {
         if (typeof r.status !== 'string') r.status = 'valid';
         // 保留消息不写入历史，但必须把「数据时间」还原成它自己的时间戳。
         // 若沿用打开页面的时刻，设备断线时会显示成「刚刚更新」，误导性很强。
-        r.rxTs = Number.isFinite(Number(r.ts)) ? Number(r.ts) * 1000 : Date.now();
-        r.retained = true;
-        renderLatest(r);
-        if (history.length > 0) {
-          document.getElementById('chartPanel').style.display = '';
-          renderChart();
-          renderAnalysis();
+        // ts 缺失/非法（设备从未校时）时无法还原数据时间，标记 tsUnknown，
+        // 让 renderLatest 诚实标注「时间未知」而不是拿当前时刻冒充。
+        const devTs = Number(r.ts);
+        if (Number.isFinite(devTs) && devTs > 0) {
+          r.rxTs = devTs * 1000;
+          r.retained = true;
+        } else {
+          r.rxTs = Date.now();
+          r.retained = true;
+          r.tsUnknown = true;
         }
+        renderLatest(r);
+        renderAll();
         setStatus('MQTT 已连接 · 显示最后一条保留数据，等待实时上报…', 'warn');
       } else {
         setStatus('MQTT 已连接 · 最后一条为无有效数据心跳，等待实时上报…', 'warn');
@@ -808,20 +1773,66 @@ function connect() {
     if (typeof r.status !== 'string') r.status = 'valid';
 
     appendHistory(r);   // appendHistory 已内部裁剪并落盘
+    liveTail = { ts: r.rxTs, r: r };   // 实时尾点：曲线末端跟着这条数据走
     document.getElementById('liveBar').style.display = '';
     renderLatest(r);
     updateLiveBar();
-    document.getElementById('chartPanel').style.display = '';
     document.getElementById('empty').style.display = 'none';
-    renderChart();
-    renderAnalysis();
+
+    // 服务端模式下不重新请求（5 分钟粒度下每 15s 请求一次纯属浪费），
+    // 而是把这条读数就地并进当前桶，曲线保持实时。
+    if (API_MODE) mergeLive(r);
+    renderAll();
   });
 
-  client.on('reconnect', () => setStatus('连接断开，正在重连…', 'warn'));
+  // 实时通道断开 ≠ 页面不可用。
+  // API 模式下曲线和统计都来自服务端，MQTT 只是「最新一条」的实时推送，
+  // 断了就退回轮询，用中性色提示即可；只有 API 也不可用时才是真故障。
+  const liveDown = (text) => setStatus(
+    API_MODE ? text + ' · 历史数据可用' : text,
+    API_MODE ? 'info' : 'warn');
+
+  client.on('reconnect', () => liveDown('实时通道重连中'));
   client.on('error', (e) => setStatus('MQTT 错误：' + e.message, 'err'));
-  client.on('close', () => { if (client) setStatus('连接已断开', 'warn'); });
+  client.on('close', () => { if (client) liveDown('实时通道未连接'); });
 }
 
+// 把一条新读数并入服务端序列的最后一个桶（按当前视图的桶宽对齐）。
+// 均值按 n 做增量加权，避免用最新值直接覆盖导致桶均值跳变。
+function mergeLive(r) {
+  if (!series) return;
+  const v = VIEWS[viewKey];
+  const bucketSec = v.bucketSec;
+  const tSec = Math.floor((r.rxTs / 1000) / bucketSec) * bucketSec;
+  const pts = series.points;
+  const last = pts[pts.length - 1];
+  const lastBucket = last ? Math.floor(last.t / bucketSec) * bucketSec : -1;
+
+  if (lastBucket === tSec) {
+    const n = Number(last.n) || 1;
+    CH_KEYS.forEach(k => {
+      const nv = Number(r[k]);
+      if (!Number.isFinite(nv)) return;
+      const old = Number(last[k]);
+      last[k] = Number.isFinite(old) ? (old * n + nv) / (n + 1) : nv;
+    });
+    last.n = n + 1;
+  } else if (tSec > lastBucket) {
+    const p = { t: tSec, n: 1 };
+    CH_KEYS.forEach(k => { p[k] = Number.isFinite(Number(r[k])) ? Number(r[k]) : null; });
+    pts.push(p);
+    if (pts.length > 3000) pts.shift();
+  } else {
+    return;   // 乱序的旧消息，丢弃
+  }
+  // 桶末尾时间推进，横轴跟着走；若用户没拖走右端，resolveWindow 会自动跟随
+  // 右端推进到「真实收包时刻 + 2s」而不是桶末尾，避免右边缘空出一个桶宽
+  series.to = Math.max(series.to, r.rxTs + 2000);
+}
+
+/* ==================================================================
+   九、事件绑定与启动
+   ================================================================== */
 // 通道切换按钮
 const tabs = document.getElementById('tabs');
 CHANNELS.forEach(c => {
@@ -832,20 +1843,40 @@ CHANNELS.forEach(c => {
   tabs.appendChild(b);
 });
 
-// 每 1s 刷新一次在线状态与倒计时；每 60s 顺带裁一次历史，
-// 保证「只留 8 小时」在设备断线、页面长期开着时也成立
+document.querySelectorAll('#viewSeg button').forEach(b => {
+  b.onclick = () => switchView(b.dataset.view);
+});
+
+// 每 1s 刷新一次在线状态与倒计时；每 60s 裁一次历史并刷新数据。
+// 服务端模式下一分钟重新聚合一次，既能跟上新数据，又不会把接口打爆。
 setInterval(() => { updateLiveBar(); }, 1000);
 setInterval(() => {
-  if (pruneHistory()) { saveHistory(); renderChart(); renderAnalysis(); }
+  if (API_MODE) { refreshData(); return; }
+  if (pruneHistory()) { saveHistory(); renderAll(); }
 }, 60000);
 
 document.getElementById('clearHistoryBtn').onclick = clearHistory;
 document.getElementById('exportCsvBtn').onclick = exportCsv;
+document.getElementById('exportViewBtn').onclick = exportViewCsv;
+document.getElementById('resetZoomBtn').onclick = resetZoom;
+document.getElementById('apiChip').onclick = async () => {
+  setStatus('正在重新探测统计服务…', 'warn');
+  await probeApi();
+  if (API_MODE) setStatus('已连接统计服务 · ' + API_ROWS.toLocaleString('en-US') + ' 条记录', '');
+  else setStatus('统计服务不可用，继续使用本机缓存', 'warn');
+  refreshData();
+};
 document.getElementById('topicBtn').onclick = connect;
 document.getElementById('topicInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') connect();
 });
-if (document.getElementById('topicInput').value) connect();
+
+updateViewSeg();
+if (document.getElementById('topicInput').value) {
+  connect();
+  // 探测放在 connect 之后：MQTT 是主功能，不能为了等探测结果而延后连接
+  probeApi().then(() => refreshData());
+}
 </script>
 </body>
 </html>
